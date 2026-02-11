@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 import logging
 
 from config import settings
-from database.connection import postgres_client
-from routers import users_router
+from database.connection import supabase
+from routers import users_router, documents_router, chat_router
 
 # Configure logging
 logging.basicConfig(
@@ -20,23 +20,24 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     logger.info("Starting up application...")
+    # For Supabase, client is initialized at import time in database.connection
     try:
-        # Initialize database connection pool
-        await postgres_client.initialize()
-        logger.info("Database connection pool initialized")
+        # Simple connectivity check on startup (optional)
+        _ = supabase.table("documents").select("id").limit(1).execute()
+        logger.info("Supabase client initialized and reachable")
     except Exception as e:
-        logger.error(f"Failed to initialize database pool: {e}")
-        raise
+        logger.error(f"Failed to initialize Supabase client: {e}")
+        # You may choose to raise here to prevent app start, but we'll just log
     
     yield
     
     # Shutdown
     logger.info("Shutting down application...")
+    # Supabase client does not require explicit shutdown
     try:
-        await postgres_client.close()
-        logger.info("Database connection pool closed")
+        logger.info("Supabase client shutdown complete")
     except Exception as e:
-        logger.error(f"Error closing database pool: {e}")
+        logger.error(f"Error during Supabase shutdown: {e}")
 
 
 # Create FastAPI app
@@ -58,6 +59,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(users_router)
+app.include_router(documents_router)
+app.include_router(chat_router)
 
 
 @app.get("/", tags=["root"])
@@ -74,19 +77,17 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     try:
-        # Try to get a connection to verify database is accessible
-        async with postgres_client.get_connection() as conn:
-            await conn.fetchval("SELECT 1")
-        
+        # Simple Supabase health check
+        _ = supabase.table("documents").select("id").limit(1).execute()
         return {
             "status": "healthy",
-            "database": "connected"
+            "database": "supabase_connected"
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {
             "status": "unhealthy",
-            "database": "disconnected",
+            "database": "supabase_disconnected",
             "error": str(e)
         }
 

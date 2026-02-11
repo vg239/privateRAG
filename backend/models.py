@@ -96,3 +96,58 @@ class User(SQLModel, table=True):
         - custom_fields: {any additional custom data}
         """
     )
+
+
+class Document(SQLModel, table=True):
+    """Document indexed with a PageIndex tree and stored in Supabase Postgres."""
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        Index("idx_documents_created_at", "created_at"),
+    )
+
+    id: int = Field(sa_column=Column("id", Integer, primary_key=True))
+
+    title: str = Field(
+        sa_column=Column("title", String(255), nullable=False),
+        description="Human-readable title, usually derived from file name",
+    )
+    file_path: str = Field(
+        sa_column=Column("file_path", String(1024), nullable=False),
+        description="Relative path on disk where the PDF is stored",
+    )
+
+    num_pages: Optional[int] = Field(
+        default=None,
+        sa_column=Column("num_pages", Integer),
+        description="Number of pages in the PDF (if known)",
+    )
+
+    status: str = Field(
+        default="pending",
+        sa_column=Column(
+            "status",
+            String(50),
+            nullable=False,
+            server_default=text("'pending'"),
+        ),
+        description="Indexing status: pending, indexing, ready, failed",
+    )
+
+    # Full PageIndex tree JSON (as produced by pageindex.page_index_main / run_pageindex.py)
+    tree: Optional[dict] = Field(
+        default=None,
+        sa_column=Column("tree", JSONB),
+        description="Stored PageIndex tree for this document",
+    )
+
+    created_at: Optional[datetime.datetime] = Field(
+        default=None,
+        sa_column=Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
+        description="Document creation timestamp",
+    )
+    updated_at: Optional[datetime.datetime] = Field(
+        default=None,
+        sa_column=Column("updated_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
+        description="Last update timestamp",
+    )

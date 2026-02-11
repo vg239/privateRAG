@@ -1,73 +1,48 @@
-# React + TypeScript + Vite
+# PrivateRAG Frontend (PageIndex-style UI)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This folder contains the React + TypeScript + Vite frontend for PrivateRAG. It provides:
 
-Currently, two official plugins are available:
+- A **documents dashboard** for uploading and browsing PDFs.
+- A PageIndex-style **tree view** of each document.
+- A conversational **chat panel** that asks OpenAI questions over the stored PageIndex tree.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The UI is intentionally clean, light, and card-based, inspired by the official PageIndex docs UI.
 
-## React Compiler
+## 🔌 Backend assumptions
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The frontend talks to the FastAPI backend in `../backend`:
 
-## Expanding the ESLint configuration
+- `POST /documents` – upload & index PDFs with PageIndex.
+- `GET /documents` – list documents.
+- `GET /documents/{id}` – get a single document (including its PageIndex tree).
+- `POST /chat` – chat over a specific document using OpenAI.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+By default, it expects the backend at `http://localhost:8000`.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+You can override this via a Vite env var:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🚀 Run the frontend
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd frontend
+npm install
+npm run dev
 ```
+
+Then open the printed URL in your browser (usually `http://localhost:5173`).
+
+## 💡 Main UI pieces
+
+- `src/App.tsx` – overall layout: header, sidebar (upload + document list), chat + tree panels.
+- `src/api/client.ts` – small API client for `/documents` and `/chat`.
+- `src/components/UploadArea.tsx` – PDF upload + status messaging.
+- `src/components/DocumentList.tsx` – sidebar list of documents with status pills.
+- `src/components/TreeView.tsx` – recursive PageIndex tree viewer.
+- `src/components/ChatPanel.tsx` – multi-turn chat UI scoped to the selected document.
+
+No authentication is required; all endpoints are called directly from the browser.
+

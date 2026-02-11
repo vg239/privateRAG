@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime
 
 
@@ -91,3 +91,52 @@ class PaginationParams(BaseModel):
 class MetadataUpdate(BaseModel):
     """Schema for updating only metadata"""
     metadata: Dict[str, Any] = Field(..., description="Updated metadata object")
+
+
+# Document Schemas
+class DocumentResponse(BaseModel):
+    """Schema for a PageIndex-indexed document."""
+
+    id: int
+    title: str
+    file_path: str
+    num_pages: Optional[int] = None
+    status: str
+    tree: Optional[Any] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentListResponse(BaseModel):
+    """Wrapper schema for listing documents."""
+
+    total: int
+    items: List[DocumentResponse]
+
+
+class ChatMessage(BaseModel):
+    """Single chat message in a conversation."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    """Chat request scoped to a specific document."""
+
+    document_id: int = Field(..., description="ID of the document to chat over")
+    question: str = Field(..., description="User question about the document")
+    history: Optional[List[ChatMessage]] = Field(
+        default=None,
+        description="Optional prior messages for multi-turn chat",
+    )
+
+
+class ChatResponse(BaseModel):
+    """Response from the chat endpoint."""
+
+    document_id: int
+    answer: str

@@ -1,7 +1,7 @@
-from .connection import postgres_client
+from .connection import supabase
 from .repositories import UserRepository
 
 __all__ = [
-    "postgres_client",
+    "supabase",
     "UserRepository",
 ]

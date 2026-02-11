@@ -12,7 +12,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from database.connection import postgres_client
+from database.connection import supabase
 from database.repositories import UserRepository
 import bcrypt
 import logging
@@ -39,18 +39,15 @@ async def test_database_connection():
     print("TEST 1: Database Connection")
     print("="*50)
     try:
-        await postgres_client.initialize()
-        print("✓ Database connection pool initialized successfully")
-        
-        # Test getting a connection
-        async with postgres_client.get_connection() as conn:
-            result = await conn.fetchval("SELECT 1")
-            assert result == 1, "Database query should return 1"
-            print("✓ Database query executed successfully")
-        
+        # Simple Supabase connectivity check
+        resp = supabase.table("users").select("id").limit(1).execute()
+        if getattr(resp, "error", None):
+            print(f"✗ Supabase query failed: {resp.error}")
+            return False
+        print("✓ Supabase client query executed successfully")
         return True
     except Exception as e:
-        print(f"✗ Database connection failed: {e}")
+        print(f✗ Supabase connection failed: {e}")
         return False
 
 
@@ -237,18 +234,15 @@ async def run_all_tests():
         results.append(await test_user_repository_password())
         results.append(await test_user_repository_metadata())
         
-        # Cleanup
+        # Cleanup (Supabase client does not need explicit close)
         print("\n" + "="*50)
         print("CLEANUP")
         print("="*50)
-        await postgres_client.close()
-        print("✓ Database connection closed")
-        
+        print("✓ Supabase client cleanup complete")
     except Exception as e:
         print(f"\n✗ Test suite failed with error: {e}")
         import traceback
         traceback.print_exc()
-        await postgres_client.close()
         return False
     
     # Summary

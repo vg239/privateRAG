@@ -37,10 +37,55 @@ This folder contains the FastAPI backend API, organized so that **HTTP concerns 
 ## 📄 Top-level files (quick purpose)
 
 - **`main.py`**: Creates the FastAPI app, wires CORS, registers routers, and manages app startup/shutdown (DB pool init/close).
-- **`config.py`**: App settings loaded from environment (`DATABASE_URL`, `DEBUG`, `HOST`, `PORT`).
-- **`schemas.py`**: Request/response contracts (Pydantic) used by routers.
-- **`models.py`**: Data model definitions (SQLModel) for the `users` table shape (useful for migrations/typing).
+- **`config.py`**: App settings loaded from environment (`DATABASE_URL`, `DEBUG`, `HOST`, `PORT`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `DOCS_STORAGE_PATH`, PageIndex knobs).
+- **`schemas.py`**: Request/response contracts (Pydantic) used by routers (users + documents + chat).
+- **`models.py`**: Data model definitions (SQLModel) for the `users` and `documents` tables.
 - **`helpers.py`**: Shared utility helpers (formatting, hashing utilities, pagination helpers, etc.).
+
+## ⚙️ Running the PageIndex + OpenAI backend
+
+1. **Install dependencies**
+
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   ```
+
+2. **Configure environment**
+
+   Create a `.env` file in `backend/` (or extend your existing one):
+
+   ```bash
+   DATABASE_URL=postgresql://postgres:*****@db.bfyuykaryjzfpzmzsjtj.supabase.co:5432/postgres
+   OPENAI_API_KEY=sk-...               # your OpenAI key
+   OPENAI_MODEL=gpt-4o-mini-search-preview-2025-03-11
+
+   # Optional, defaults shown
+   DOCS_STORAGE_PATH=storage/documents
+   ```
+
+   The OpenAI key is also mirrored into `CHATGPT_API_KEY` at runtime so that the
+   open-source `pageindex` library can use it directly. No PageIndex API key is required.
+
+3. **Apply migrations (creates `users` + `documents` tables in Supabase Postgres)**
+
+   ```bash
+   cd backend
+   alembic upgrade head
+   ```
+
+4. **Run the API**
+
+   ```bash
+   uvicorn main:app --reload
+   ```
+
+   Key endpoints:
+
+   - **`POST /documents`** – upload a PDF, run PageIndex locally, and store the tree in Supabase.
+   - **`GET /documents`** – list all indexed documents.
+   - **`GET /documents/{id}`** – get a single document (including its PageIndex tree).
+   - **`POST /chat`** – ask a question about a specific document using its stored PageIndex tree and OpenAI.
 
 ## 🧹 Non-source folders
 
