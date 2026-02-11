@@ -5,7 +5,7 @@ import logging
 
 from config import settings
 from database.connection import supabase
-from routers import users_router, documents_router, chat_router
+from routers import auth_router, users_router, documents_router, chat_router
 
 # Configure logging
 logging.basicConfig(
@@ -58,6 +58,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(documents_router)
 app.include_router(chat_router)

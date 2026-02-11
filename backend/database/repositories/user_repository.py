@@ -7,6 +7,7 @@ import logging
 
 from fastapi.concurrency import run_in_threadpool
 from fastapi import HTTPException
+from postgrest.exceptions import APIError
 
 from database.connection import supabase
 
@@ -145,7 +146,16 @@ class UserRepository:
                 .execute()
             )
 
-        response = await run_in_threadpool(_get)
+        try:
+            response = await run_in_threadpool(_get)
+        except APIError as e:
+            # Handle case where no user exists (0 rows)
+            if e.code == 'PGRST116':
+                return None
+            logger.error(
+                f"Error finding user by wallet {wallet_address}: {e}"
+            )
+            return None
 
         if getattr(response, "error", None):
             logger.error(

@@ -4,6 +4,8 @@ import {
   fetchDocuments,
   fetchDocumentDetail,
   sendChatMessage,
+  requestAuthNonce,
+  verifyAuthSignature,
   type DocumentSummary,
   type DocumentDetail,
   type ChatMessage,
@@ -19,6 +21,9 @@ function App() {
   const [selectedDetail, setSelectedDetail] = useState<DocumentDetail | null>(null);
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
 
   async function loadDocuments() {
     setIsLoadingDocs(true);
@@ -63,6 +68,46 @@ function App() {
     return res.answer;
   }
 
+  async function handleConnectWallet() {
+    setError(null);
+    setAuthMessage(null);
+    setIsConnectingWallet(true);
+    try {
+      const eth = (window as any).ethereum;
+      if (!eth) {
+        setError("MetaMask (window.ethereum) not found. Please install MetaMask.");
+        return;
+      }
+
+      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+      if (!accounts || !accounts.length) {
+        setError("No wallet accounts returned from MetaMask.");
+        return;
+      }
+
+      const wallet = accounts[0].toLowerCase();
+      setWalletAddress(wallet);
+
+      const { nonce } = await requestAuthNonce(wallet);
+      const message = `Login to PrivateRAG with wallet ${wallet}. Nonce: ${nonce}`;
+
+      const signature: string = await eth.request({
+        method: "personal_sign",
+        params: [message, wallet],
+      });
+
+      await verifyAuthSignature(wallet, signature);
+      setAuthMessage("Wallet connected");
+
+      // Optionally reload documents after auth so they are scoped to this wallet
+      await loadDocuments();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to connect wallet.");
+    } finally {
+      setIsConnectingWallet(false);
+    }
+  }
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -71,8 +116,19 @@ function App() {
           <span className="app-subtitle">Vectorless, reasoning-based RAG with PageIndex</span>
         </div>
         <div className="app-meta">
-          <span className="pill">OpenAI: gpt-4o-mini-search-preview-2025-03-11</span>
-          <span className="pill pill-quiet">Supabase Postgres</span>
+          <button
+            className="pill"
+            type="button"
+            onClick={handleConnectWallet}
+            disabled={isConnectingWallet}
+          >
+            {walletAddress
+              ? `Wallet: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+              : isConnectingWallet
+                ? "Connecting..."
+                : "Connect Wallet"}
+          </button>
+          {authMessage ? <span className="pill pill-quiet">{authMessage}</span> : null}
         </div>
       </header>
 

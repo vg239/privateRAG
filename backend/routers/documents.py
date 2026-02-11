@@ -1,8 +1,9 @@
 from pathlib import Path
 from typing import List
-
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.concurrency import run_in_threadpool
+
+from auth_utils import get_current_wallet
 
 from config import settings
 from database.repositories import DocumentRepository
@@ -28,6 +29,7 @@ def _resolve_storage_path(filename: str) -> Path:
 async def upload_document(
     file: UploadFile = File(...),
     title: str | None = Form(None),
+    current_wallet: str = Depends(get_current_wallet),
 ) -> DocumentResponse:
     """
     Upload a PDF document, generate its PageIndex tree, and store both in Postgres.
@@ -50,6 +52,7 @@ async def upload_document(
         title=doc_title,
         file_path=str(storage_path.relative_to(BACKEND_ROOT)),
         status="indexing",
+        owner_wallet=current_wallet,
     )
 
     try:
@@ -63,6 +66,7 @@ async def upload_document(
             status="ready",
             tree=tree,  # type: ignore[arg-type]
             num_pages=num_pages,
+            owner_wallet=current_wallet,
         )
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update document after indexing")
@@ -80,9 +84,10 @@ async def upload_document(
 async def list_documents(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    current_wallet: str = Depends(get_current_wallet),
 ) -> DocumentListResponse:
     """Return a paginated list of all documents."""
-    items = await DocumentRepository.list_all(limit=limit, offset=offset)
+    items = await DocumentRepository.list_for_owner(current_wallet, limit=limit, offset=offset)
     # For now we don't track total separately; approximate using returned count + offset.
     total = len(items) + offset
     return DocumentListResponse(
@@ -92,9 +97,12 @@ async def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-async def get_document(document_id: int) -> DocumentResponse:
-    """Return a single document, including its stored PageIndex tree."""
-    doc = await DocumentRepository.get_by_id(document_id)
+async def get_document(
+    document_id: int,
+    wallet: str = Depends(get_current_wallet),
+) -> DocumentResponse:
+    """Return a single document for the current wallet."""
+    doc = await DocumentRepository.get_by_id_for_owner(document_id, wallet)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse(**doc)
