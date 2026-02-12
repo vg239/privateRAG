@@ -14,3 +14,8 @@ python-multipart
 tiktoken
 PyYAML
 cryptography
+supabase
+uvicorn
+pydantic[email]
+PyPDF2
+pymupdf
