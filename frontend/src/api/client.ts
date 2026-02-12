@@ -38,7 +38,35 @@ export type ChatResponse = {
   answer: string;
 };
 
+export type NonceResponse = {
+  wallet_address: string;
+  nonce: string;
+};
+
+export type VerifyResponse = {
+  access_token: string;
+  token_type: string;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
+function authHeaders(extra: HeadersInit = {}): HeadersInit {
+  const headers: HeadersInit = { ...extra };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  return headers;
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -49,7 +77,9 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export async function fetchDocuments(): Promise<DocumentListResponse> {
-  const res = await fetch(`${API_BASE_URL}/documents`);
+  const res = await fetch(`${API_BASE_URL}/documents`, {
+    headers: authHeaders(),
+  });
   return handleResponse<DocumentListResponse>(res);
 }
 
@@ -62,6 +92,7 @@ export async function uploadDocument(file: File, title?: string): Promise<Docume
 
   const res = await fetch(`${API_BASE_URL}/documents`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
 
@@ -69,7 +100,9 @@ export async function uploadDocument(file: File, title?: string): Promise<Docume
 }
 
 export async function fetchDocumentDetail(id: number): Promise<DocumentDetail> {
-  const res = await fetch(`${API_BASE_URL}/documents/${id}`);
+  const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<DocumentDetail>(res);
 }
 
@@ -80,9 +113,9 @@ export async function sendChatMessage(
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE_URL}/chat`, {
     method: "POST",
-    headers: {
+    headers: authHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify({
       document_id: documentId,
       question,
@@ -91,5 +124,39 @@ export async function sendChatMessage(
   });
 
   return handleResponse<ChatResponse>(res);
+}
+
+const buildLoginMessage = (walletAddress: string, nonce: string): string =>
+  `Login to PrivateRAG with wallet ${walletAddress.toLowerCase()}. Nonce: ${nonce}`;
+
+export async function requestAuthNonce(walletAddress: string): Promise<NonceResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/nonce`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ wallet_address: walletAddress.toLowerCase() }),
+  });
+  return handleResponse<NonceResponse>(res);
+}
+
+export async function verifyAuthSignature(
+  walletAddress: string,
+  signature: string,
+): Promise<VerifyResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      wallet_address: walletAddress.toLowerCase(),
+      signature,
+    }),
+  });
+
+  const data = await handleResponse<VerifyResponse>(res);
+  setAuthToken(data.access_token);
+  return data;
 }
 
