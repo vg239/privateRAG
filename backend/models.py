@@ -112,9 +112,9 @@ class Document(SQLModel, table=True):
         sa_column=Column("title", String(255), nullable=False),
         description="Human-readable title, usually derived from file name",
     )
-    file_path: str = Field(
-        sa_column=Column("file_path", String(1024), nullable=False),
-        description="Relative path on disk where the PDF is stored",
+    nova_cid: str = Field(
+        sa_column=Column("nova_cid", String(1024), nullable=False),
+        description="IPFS CID (Content Identifier) from Nova encrypted storage",
     )
 
     num_pages: Optional[int] = Field(

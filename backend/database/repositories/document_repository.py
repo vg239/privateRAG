@@ -56,14 +56,14 @@ class DocumentRepository:
     @staticmethod
     async def create(
         title: str,
-        file_path: str,
+        nova_cid: str,
         status: str = "pending",
         owner_wallet: str | None = None,
     ) -> Dict[str, Any]:
         """Create a new document record before indexing starts."""
         payload = {
             "title": title,
-            "file_path": file_path,
+            "nova_cid": nova_cid,
             "status": status,
         }
         if owner_wallet:

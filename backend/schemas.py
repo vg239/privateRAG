@@ -99,7 +99,7 @@ class DocumentResponse(BaseModel):
 
     id: int
     title: str
-    file_path: str
+    nova_cid: str
     num_pages: Optional[int] = None
     status: str
     tree: Optional[Any] = None

@@ -18,8 +18,12 @@ class Settings:
     )
 
     # Document / PageIndex configuration
-    # Where uploaded PDFs are stored (relative to backend/ by default)
-    DOCS_STORAGE_PATH: str = os.getenv("DOCS_STORAGE_PATH", "storage/documents")
+    # Nova SDK (encrypted IPFS file storage)
+    NOVA_API_KEY: str = os.getenv("NOVA_API_KEY", "")
+    NOVA_ACCOUNT_ID: str = os.getenv("NOVA_ACCOUNT_ID", "")
+    NOVA_GROUP_ID: str = os.getenv("NOVA_GROUP_ID", "")
+    NOVA_BASE_URL: str = os.getenv("NOVA_BASE_URL", "https://testnet.nova-sdk.com")
+    NOVA_MCP_URL: str = os.getenv("NOVA_MCP_URL", "https://nova-mcp.fastmcp.app")
     # PageIndex tree-generation knobs (match run_pageindex.py defaults)
     PAGEINDEX_TOC_CHECK_PAGES: int = int(os.getenv("PAGEINDEX_TOC_CHECK_PAGES", "20"))
     PAGEINDEX_MAX_PAGES_PER_NODE: int = int(os.getenv("PAGEINDEX_MAX_PAGES_PER_NODE", "10"))

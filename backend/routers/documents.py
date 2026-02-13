@@ -1,4 +1,5 @@
-from pathlib import Path
+import os
+import tempfile
 from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.concurrency import run_in_threadpool
@@ -7,22 +8,12 @@ from auth_utils import get_current_wallet
 
 from config import settings
 from database.repositories import DocumentRepository
+from nova_storage import nova_upload
 from pageindex_service import generate_tree_from_pdf, infer_num_pages_from_tree
 from schemas import DocumentResponse, DocumentListResponse
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-BACKEND_ROOT = Path(__file__).resolve().parent.parent
-
-
-def _resolve_storage_path(filename: str) -> Path:
-    """Resolve the absolute path where an uploaded PDF will be stored."""
-    storage_root = Path(settings.DOCS_STORAGE_PATH)
-    if not storage_root.is_absolute():
-        storage_root = BACKEND_ROOT / storage_root
-    storage_root.mkdir(parents=True, exist_ok=True)
-    return storage_root / filename
 
 
 @router.post("/", response_model=DocumentResponse, status_code=201)
@@ -32,33 +23,48 @@ async def upload_document(
     current_wallet: str = Depends(get_current_wallet),
 ) -> DocumentResponse:
     """
-    Upload a PDF document, generate its PageIndex tree, and store both in Postgres.
-
-    This endpoint is synchronous for simplicity: it returns once indexing is done.
+    Upload a PDF document: store it on Nova (encrypted IPFS), generate its
+    PageIndex tree, and persist both in the database.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     safe_name = file.filename.replace("/", "_").replace("\\", "_")
-    storage_path = _resolve_storage_path(safe_name)
-
-    # Persist the uploaded file to disk
     content = await file.read()
-    storage_path.write_bytes(content)
 
-    # Create the DB record in "indexing" state
+    # ── Upload to Nova (encrypted IPFS) ──────────────────────────────────
+    group_id = settings.NOVA_GROUP_ID
+    if not group_id:
+        raise HTTPException(
+            status_code=500,
+            detail="NOVA_GROUP_ID is not configured on the server",
+        )
+
+    try:
+        nova_result = await nova_upload(group_id, content, safe_name)
+        nova_cid = nova_result["cid"]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Nova IPFS upload failed: {exc}",
+        ) from exc
+
+    # ── Create DB record in "indexing" state ──────────────────────────────
     doc_title = title or file.filename
     initial = await DocumentRepository.create(
         title=doc_title,
-        file_path=str(storage_path.relative_to(BACKEND_ROOT)),
+        nova_cid=nova_cid,
         status="indexing",
         owner_wallet=current_wallet,
     )
 
+    # ── Generate PageIndex tree (needs a temp file on disk) ───────────────
     try:
-        # Run PageIndex generation in a worker thread so its internal asyncio.run()
-        # does not conflict with FastAPI's running event loop.
-        tree = await run_in_threadpool(generate_tree_from_pdf, str(storage_path))
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        tree = await run_in_threadpool(generate_tree_from_pdf, tmp_path)
         num_pages = infer_num_pages_from_tree(tree)
 
         updated = await DocumentRepository.update_after_indexing(
@@ -71,6 +77,8 @@ async def upload_document(
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update document after indexing")
         return DocumentResponse(**updated)
+    except HTTPException:
+        raise
     except Exception as exc:  # pragma: no cover - defensive
         await DocumentRepository.update_after_indexing(
             document_id=initial["id"],
@@ -78,6 +86,12 @@ async def upload_document(
             error_message=str(exc),
         )
         raise HTTPException(status_code=500, detail=f"PageIndex indexing failed: {exc}") from exc
+    finally:
+        # Clean up the temp file
+        try:
+            os.unlink(tmp_path)
+        except (OSError, NameError):
+            pass
 
 
 @router.get("/", response_model=DocumentListResponse)

@@ -16,6 +16,7 @@ PyYAML
 cryptography
 supabase
 uvicorn
+httpx
 pydantic[email]
 PyPDF2
 pymupdf
