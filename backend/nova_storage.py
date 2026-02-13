@@ -1,75 +1,54 @@
 """
-Nova SDK Python client for encrypted IPFS file storage.
+Nova SDK Python client — Direct NEAR CLI + Local Encryption.
 
-Implements the same upload/retrieve flow as the official nova-sdk-js:
-1. Authenticate with API key → session token
-2. Upload: prepare_upload → client-side AES-256-GCM encrypt → finalize_upload → CID
-3. Retrieve: prepare_retrieve → client-side AES-256-GCM decrypt → plaintext bytes
+Bypasses the Nova MCP gateway (which has auth issues) and instead:
+1. Encrypts files locally with Fernet (symmetric encryption)
+2. Stores encrypted files on local disk
+3. Anchors file hash + identifier on NEAR blockchain via `near` CLI
+4. Retrieves + decrypts from local disk
 """
 
 import os
-import base64
+import json
 import hashlib
-import time
+import subprocess
 import logging
-from typing import Optional
+from pathlib import Path
 
-import httpx
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.fernet import Fernet
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Nova infrastructure defaults (mirrors nova-sdk-js/src/index.ts)
-# ---------------------------------------------------------------------------
-DEFAULT_MCP_URL = "https://nova-mcp.fastmcp.app"
-DEFAULT_AUTH_URL_MAINNET = "https://nova-sdk.com"
-DEFAULT_AUTH_URL_TESTNET = "https://testnet.nova-sdk.com"
 
 # ---------------------------------------------------------------------------
-# Token cache (module-level singleton for the lifetime of the process)
+# Storage directory
 # ---------------------------------------------------------------------------
-_token_cache: dict | None = None  # {"token": str, "expires_at": float}
 
-
-def _get_auth_url() -> str:
-    base = getattr(settings, "NOVA_BASE_URL", "") or ""
-    if base:
-        return base.rstrip("/")
-    return DEFAULT_AUTH_URL_TESTNET  # default to testnet
-
-
-def _get_mcp_url() -> str:
-    return getattr(settings, "NOVA_MCP_URL", "") or DEFAULT_MCP_URL
+def _get_storage_dir() -> Path:
+    """Return (and create) the encrypted-file storage directory."""
+    d = Path(settings.NOVA_STORAGE_DIR)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 # ---------------------------------------------------------------------------
-# AES-256-GCM helpers (same wire-format as the JS SDK)
-# Format: IV (12 bytes) || ciphertext || auth-tag (16 bytes)
+# Encryption helpers (Fernet — AES-128-CBC under the hood, with HMAC)
 # ---------------------------------------------------------------------------
 
-def _encrypt_data(data: bytes, key_b64: str) -> str:
-    """Encrypt *data* with AES-256-GCM. Returns base64-encoded ciphertext."""
-    key = base64.b64decode(key_b64)
-    iv = os.urandom(12)
-    aesgcm = AESGCM(key)
-    # AESGCM.encrypt returns ciphertext || tag (16 bytes)
-    ct_with_tag = aesgcm.encrypt(iv, data, None)
-    # Wire format: IV || ciphertext || tag  (same as JS SDK)
-    payload = iv + ct_with_tag
-    return base64.b64encode(payload).decode("ascii")
+def _encrypt_data(data: bytes) -> tuple[bytes, str]:
+    """Encrypt *data* with a fresh Fernet key. Returns (ciphertext, key_str)."""
+    key = Fernet.generate_key()
+    cipher = Fernet(key)
+    encrypted = cipher.encrypt(data)
+    return encrypted, key.decode()
 
 
-def _decrypt_data(encrypted_b64: str, key_b64: str) -> bytes:
-    """Decrypt base64-encoded AES-256-GCM payload. Returns plaintext bytes."""
-    raw = base64.b64decode(encrypted_b64)
-    key = base64.b64decode(key_b64)
-    iv = raw[:12]
-    ct_with_tag = raw[12:]  # ciphertext + 16-byte auth tag
-    aesgcm = AESGCM(key)
-    return aesgcm.decrypt(iv, ct_with_tag, None)
+def _decrypt_data(encrypted: bytes, key_str: str) -> bytes:
+    """Decrypt Fernet-encrypted bytes."""
+    cipher = Fernet(key_str.encode())
+    return cipher.decrypt(encrypted)
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -77,195 +56,153 @@ def _sha256_hex(data: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Session-token management
+# Local persistence (encrypted file + key)
 # ---------------------------------------------------------------------------
 
-async def _get_session_token() -> str:
-    """Get or refresh the Nova session token (JWT)."""
-    global _token_cache
+def _save_encrypted(file_hash: str, encrypted: bytes, key_str: str) -> None:
+    """Write encrypted data and its key to the storage directory."""
+    d = _get_storage_dir()
+    (d / f"{file_hash}.enc").write_bytes(encrypted)
+    (d / f"{file_hash}.key").write_text(key_str)
+    logger.info("Saved encrypted file: %s.enc (%d bytes)", file_hash, len(encrypted))
 
-    api_key = getattr(settings, "NOVA_API_KEY", "") or ""
-    if not api_key:
+
+def _load_encrypted(file_hash: str) -> tuple[bytes, str]:
+    """Read encrypted data and its key from the storage directory."""
+    d = _get_storage_dir()
+    enc_path = d / f"{file_hash}.enc"
+    key_path = d / f"{file_hash}.key"
+    if not enc_path.exists() or not key_path.exists():
+        raise FileNotFoundError(
+            f"Encrypted file or key not found for hash: {file_hash}"
+        )
+    encrypted = enc_path.read_bytes()
+    key_str = key_path.read_text().strip()
+    return encrypted, key_str
+
+
+# ---------------------------------------------------------------------------
+# NEAR CLI — anchor on-chain
+# ---------------------------------------------------------------------------
+
+async def _anchor_on_near(file_hash: str, ipfs_hash: str) -> dict:
+    """
+    Call `near contract call-function as-transaction` to record the
+    file hash on the Nova contract.  Returns {"tx_id": ..., "explorer_link": ...}.
+    """
+    contract_id = settings.NOVA_CONTRACT_ID
+    group_id = settings.NOVA_GROUP_ID
+    signer_id = settings.NOVA_SIGNER_ID
+
+    args = json.dumps({
+        "group_id": group_id,
+        "user_id": signer_id,
+        "file_hash": file_hash,
+        "ipfs_hash": ipfs_hash,
+    })
+
+    cmd = [
+        "near", "contract", "call-function", "as-transaction",
+        contract_id, "record_transaction",
+        "json-args", args,
+        "prepaid-gas", "30 TeraGas",
+        "attached-deposit", "0.01 NEAR",
+        "sign-as", signer_id,
+        "network-config", "testnet",
+        "sign-with-keychain", "send",
+    ]
+
+    logger.info(
+        "Anchoring on NEAR: contract=%s signer=%s file_hash=%s",
+        contract_id, signer_id, file_hash,
+    )
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+    if result.stdout:
+        logger.info("NEAR stdout:\n%s", result.stdout)
+    if result.stderr:
+        logger.warning("NEAR stderr:\n%s", result.stderr)
+
+    if result.returncode != 0:
         raise RuntimeError(
-            "NOVA_API_KEY is not configured. "
-            "Get one at https://nova-sdk.com or https://testnet.nova-sdk.com"
+            f"NEAR transaction failed (exit {result.returncode}): "
+            f"{result.stderr or result.stdout}"
         )
 
-    account_id = getattr(settings, "NOVA_ACCOUNT_ID", "") or ""
-    if not account_id:
-        raise RuntimeError(
-            "NOVA_ACCOUNT_ID is not configured. "
-            "Set it to your NEAR account (e.g. 'alice.nova-sdk.near')."
-        )
+    # Extract transaction ID and explorer link
+    tx_id = ""
+    explorer_link = ""
+    for line in (result.stdout or "").split("\n"):
+        if "Transaction ID:" in line:
+            tx_id = line.split("Transaction ID:")[-1].strip()
+        if "https://explorer" in line:
+            explorer_link = line.strip()
 
-    # Return cached token if still valid (5 min buffer)
-    if _token_cache and _token_cache["expires_at"] > time.time() + 300:
-        return _token_cache["token"]
+    logger.info("NEAR anchor OK: tx_id=%s explorer=%s", tx_id, explorer_link)
 
-    auth_url = _get_auth_url()
-    logger.info("Fetching Nova session token for %s from %s", account_id, auth_url)
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            f"{auth_url}/api/auth/session-token",
-            json={"account_id": account_id},
-            headers={
-                "Content-Type": "application/json",
-                "X-API-Key": api_key,
-            },
-        )
-        resp.raise_for_status()
-
-    body = resp.json()
-    token = body.get("token")
-    if not token:
-        raise RuntimeError("Nova auth returned no token – account may not exist")
-
-    expires_in_str = body.get("expires_in", "24h")
-    expires_seconds = _parse_expiry(expires_in_str)
-    _token_cache = {
-        "token": token,
-        "expires_at": time.time() + expires_seconds,
-    }
-
-    logger.info("Nova session token obtained, expires in %s", expires_in_str)
-    return token
-
-
-def _parse_expiry(s: str) -> float:
-    """Parse '24h', '30m', '1d' → seconds."""
-    import re
-    m = re.match(r"^(\d+)([hmd])$", s)
-    if not m:
-        return 23 * 3600  # fallback 23h
-    value, unit = int(m.group(1)), m.group(2)
-    if unit == "h":
-        return value * 3600
-    if unit == "m":
-        return value * 60
-    if unit == "d":
-        return value * 86400
-    return 23 * 3600
-
-
-async def _mcp_headers() -> dict[str, str]:
-    token = await _get_session_token()
-    account_id = getattr(settings, "NOVA_ACCOUNT_ID", "")
     return {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "X-Account-Id": account_id,
+        "tx_id": tx_id,
+        "explorer_link": explorer_link,
     }
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Public API  (same interface as the old MCP-based version)
 # ---------------------------------------------------------------------------
 
 async def nova_register_group(group_id: str) -> str:
     """
-    Register a new group on Nova. Caller becomes the owner.
-    Must be called once before uploading to a new group.
+    Register a new group on-chain.
+    With the direct CLI approach, this is done once manually via the NEAR CLI.
+    This function is kept for backward compatibility.
     """
-    mcp_url = _get_mcp_url()
-    headers = await _mcp_headers()
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{mcp_url}/tools/register_group",
-            json={"group_id": group_id},
-            headers=headers,
-        )
-        if resp.status_code != 200:
-            body = resp.text
-            logger.error("Nova register_group failed (%d): %s", resp.status_code, body)
-            raise RuntimeError(f"Nova register_group failed ({resp.status_code}): {body}")
-
-    result = resp.json()
-    msg = result.get("message", f"Group '{group_id}' registered")
-    logger.info("Nova group registered: %s", msg)
-    return msg
+    logger.info(
+        "Group registration should be done via NEAR CLI:\n"
+        "  near contract call-function as-transaction %s register_group "
+        "json-args '{\"group_id\": \"%s\"}' ...",
+        settings.NOVA_CONTRACT_ID, group_id,
+    )
+    return f"Group '{group_id}' — use NEAR CLI to register on {settings.NOVA_CONTRACT_ID}"
 
 
 async def nova_upload(group_id: str, data: bytes, filename: str) -> dict:
     """
-    Upload a file to Nova (encrypted IPFS).
+    Upload a file: encrypt locally, store to disk, anchor hash on NEAR.
 
     Returns dict with keys: cid, trans_id, file_hash
+    (cid is the SHA256 file hash used as the storage identifier)
     """
-    mcp_url = _get_mcp_url()
-    headers = await _mcp_headers()
-
-    # Step 1: prepare_upload → get encryption key + upload_id
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        prep_resp = await client.post(
-            f"{mcp_url}/tools/prepare_upload",
-            json={"group_id": group_id, "filename": filename},
-            headers=headers,
-        )
-        if prep_resp.status_code != 200:
-            body = prep_resp.text
-            logger.error("Nova prepare_upload failed (%d): %s", prep_resp.status_code, body)
-            raise RuntimeError(f"Nova prepare_upload failed ({prep_resp.status_code}): {body}")
-    prep = prep_resp.json()
-    upload_id = prep["upload_id"]
-    key_b64 = prep["key"]
-
-    logger.info("Nova prepare_upload OK: upload_id=%s", upload_id)
-
-    # Step 2: encrypt locally (AES-256-GCM)
-    encrypted_b64 = _encrypt_data(data, key_b64)
+    # Step 1: compute hash of the plaintext
     file_hash = _sha256_hex(data)
+    logger.info("nova_upload: filename=%s size=%d hash=%s", filename, len(data), file_hash)
 
-    # Step 3: finalize_upload → CID
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        fin_resp = await client.post(
-            f"{mcp_url}/api/finalize-upload",
-            json={
-                "upload_id": upload_id,
-                "encrypted_data": encrypted_b64,
-                "file_hash": file_hash,
-            },
-            headers=headers,
-        )
-        if fin_resp.status_code != 200:
-            body = fin_resp.text
-            logger.error("Nova finalize_upload failed (%d): %s", fin_resp.status_code, body)
-            raise RuntimeError(f"Nova finalize_upload failed ({fin_resp.status_code}): {body}")
-    result = fin_resp.json()
+    # Step 2: encrypt and persist
+    encrypted, key_str = _encrypt_data(data)
+    _save_encrypted(file_hash, encrypted, key_str)
 
-    logger.info("Nova upload complete: cid=%s", result.get("cid"))
+    # Step 3: anchor on NEAR
+    try:
+        near_result = await _anchor_on_near(file_hash, file_hash)
+        trans_id = near_result.get("tx_id", "")
+    except Exception as exc:
+        logger.error("NEAR anchoring failed (file still saved locally): %s", exc)
+        trans_id = f"anchor_failed:{exc}"
+
     return {
-        "cid": result["cid"],
-        "trans_id": result.get("trans_id", ""),
-        "file_hash": result.get("file_hash", file_hash),
+        "cid": file_hash,
+        "trans_id": trans_id,
+        "file_hash": file_hash,
     }
 
 
 async def nova_retrieve(group_id: str, cid: str) -> bytes:
     """
-    Retrieve and decrypt a file from Nova (IPFS).
+    Retrieve and decrypt a file from local encrypted storage.
 
-    Returns the decrypted file bytes.
+    `cid` is the SHA256 file hash returned by nova_upload.
     """
-    mcp_url = _get_mcp_url()
-    headers = await _mcp_headers()
-
-    # Step 1: prepare_retrieve → encrypted data + key
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(
-            f"{mcp_url}/tools/prepare_retrieve",
-            json={"group_id": group_id, "ipfs_hash": cid},
-            headers=headers,
-        )
-        resp.raise_for_status()
-
-    body = resp.json()
-    key_b64 = body["key"]
-    encrypted_b64 = body["encrypted_b64"]
-
-    # Step 2: decrypt locally
-    plaintext = _decrypt_data(encrypted_b64, key_b64)
-
-    logger.info("Nova retrieve complete: cid=%s, %d bytes", cid, len(plaintext))
+    encrypted, key_str = _load_encrypted(cid)
+    plaintext = _decrypt_data(encrypted, key_str)
+    logger.info("nova_retrieve: cid=%s decrypted %d bytes", cid, len(plaintext))
     return plaintext

@@ -22,8 +22,13 @@ class Settings:
     NOVA_API_KEY: str = os.getenv("NOVA_API_KEY", "")
     NOVA_ACCOUNT_ID: str = os.getenv("NOVA_ACCOUNT_ID", "")
     NOVA_GROUP_ID: str = os.getenv("NOVA_GROUP_ID", "")
+    NOVA_CONTRACT_ID: str = os.getenv("NOVA_CONTRACT_ID", "nova-sdk-6.testnet")
     NOVA_BASE_URL: str = os.getenv("NOVA_BASE_URL", "https://testnet.nova-sdk.com")
-    NOVA_MCP_URL: str = os.getenv("NOVA_MCP_URL", "https://nova-mcp.fastmcp.app")
+    # Strip any tool-path suffix so we always have just the base MCP URL
+    NOVA_MCP_URL: str = os.getenv("NOVA_MCP_URL", "https://nova-mcp.fastmcp.app").split("/tools/")[0]
+    # Direct NEAR CLI settings
+    NOVA_SIGNER_ID: str = os.getenv("NOVA_SIGNER_ID", "nikhilkottoli.testnet")
+    NOVA_STORAGE_DIR: str = os.getenv("NOVA_STORAGE_DIR", "./encrypted_storage")
     # PageIndex tree-generation knobs (match run_pageindex.py defaults)
     PAGEINDEX_TOC_CHECK_PAGES: int = int(os.getenv("PAGEINDEX_TOC_CHECK_PAGES", "20"))
     PAGEINDEX_MAX_PAGES_PER_NODE: int = int(os.getenv("PAGEINDEX_MAX_PAGES_PER_NODE", "10"))
