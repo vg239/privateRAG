@@ -55,14 +55,14 @@ export function Landing() {
 
           {/* CTA Buttons */}
           <div className="hero-actions">
-            <button 
+            <button
               className="btn btn-primary"
               onClick={() => navigate("/app")}
             >
               Get Started
               <ArrowRight size={18} />
             </button>
-            <button 
+            <button
               className="btn btn-ghost"
               onClick={() => navigate("/docs")}
             >
@@ -149,7 +149,7 @@ export function Landing() {
               <div className="flow-line">
                 <span className="flow-label">Key</span>
                 <span className="flow-arrow">→</span>
-                <span className="flow-value local">Wallet Sign</span>
+                <span className="flow-value local">NEAR Wallet Sign</span>
               </div>
               <div className="flow-line">
                 <span className="flow-label">Encrypted TOC</span>

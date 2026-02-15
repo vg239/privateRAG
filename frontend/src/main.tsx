@@ -1,4 +1,9 @@
+import { Buffer } from 'buffer'
 import { createRoot } from 'react-dom/client'
+
+// Polyfill Buffer globally for near-api-js and other dependencies
+window.Buffer = window.Buffer || Buffer;
+
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 import { Landing, AppPage, Docs } from './pages'

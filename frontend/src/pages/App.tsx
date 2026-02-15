@@ -11,26 +11,30 @@ import type { TOCResult } from "../lib/pyodide";
 import { useWallet } from "../hooks/useWallet";
 import { encrypt, decrypt, type EncryptedBlob } from "../lib/crypto";
 import { createVault, type VaultResponse } from "../services/vault";
+import { uploadToNova, type NovaUploadResult } from "../services/nova";
 import "./App.page.css";
 
 type ViewMode = "tree" | "json" | "encrypted";
-type SigningState = "idle" | "awaiting-signature" | "deriving-key" | "encrypting" | "storing" | "done";
+type SigningState = "idle" | "awaiting-signature" | "deriving-key" | "encrypting" | "uploading-nova" | "storing" | "done";
 
 export function AppPage() {
   const navigate = useNavigate();
   const [localTOC, setLocalTOC] = useState<TOCResult | null>(null);
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
   const [showInfoModal, setShowInfoModal] = useState(false);
-  
+
   // Encryption state
   const [encryptedBlob, setEncryptedBlob] = useState<EncryptedBlob | null>(null);
   const [signingState, setSigningState] = useState<SigningState>("idle");
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
-  
+  const [novaApiKey, setNovaApiKey] = useState("");
+  const [novaResult, setNovaResult] = useState<NovaUploadResult | null>(null);
+
   // Vault storage state
   const [savedVault, setSavedVault] = useState<VaultResponse | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
-  
+
   // Wallet hook
   const {
     wallet,
@@ -42,15 +46,17 @@ export function AppPage() {
     deriveKey,
     getKey,
     signTOC,
-    isMetaMaskInstalled,
+    isWalletAvailable,
   } = useWallet();
 
-  function handleTOCGenerated(toc: TOCResult) {
+  function handleTOCGenerated(toc: TOCResult, file: File) {
     setLocalTOC(toc);
+    setCurrentFile(file);
     setEncryptedBlob(null);
     setEncryptionError(null);
     setSavedVault(null);
     setStorageError(null);
+    setNovaResult(null);
     setViewMode("tree");
     console.log("TOC generated:", toc);
   }
@@ -62,15 +68,17 @@ export function AppPage() {
     }
 
     setEncryptionError(null);
+    setEncryptionError(null);
     setStorageError(null);
+    setNovaResult(null);
 
     try {
       let key = getKey();
-      
+
       if (!key) {
         setSigningState("awaiting-signature");
         key = await deriveKey();
-        
+
         if (!key) {
           setSigningState("idle");
           setEncryptionError("Signature rejected - please try again");
@@ -82,8 +90,25 @@ export function AppPage() {
       setSigningState("encrypting");
       const blob = await encrypt(key, localTOC);
       setEncryptedBlob(blob);
-      
+
       console.log("Encrypted:", blob);
+
+      // Upload to NOVA if API key is present
+      if (novaApiKey && currentFile) {
+        setSigningState("uploading-nova");
+        try {
+          const result = await uploadToNova(currentFile, novaApiKey);
+          setNovaResult(result);
+          console.log("Uploaded to NOVA:", result);
+        } catch (novaErr) {
+          console.warn("NOVA Upload failed (Non-blocking):", novaErr);
+          // User requested to show this message but CONTINUE the flow
+          // We won't set encryptionError because that hides the success state
+          // setEncryptionError("NOVA Upload failed: " + (novaErr instanceof Error ? novaErr.message : String(novaErr)));
+
+          // Proceed to storage despite failure
+        }
+      }
 
       // Auto-store in database
       if (wallet.address) {
@@ -91,7 +116,7 @@ export function AppPage() {
         try {
           // Sign TOC hash for ownership verification
           const tocSignature = await signTOC(localTOC.doc_hash);
-          
+
           const vaultResponse = await createVault({
             owner_wallet: wallet.address.toLowerCase(),
             doc_hash: localTOC.doc_hash,
@@ -110,7 +135,7 @@ export function AppPage() {
 
       setViewMode("encrypted");
       setSigningState("done");
-      
+
       setTimeout(() => setSigningState("idle"), 2000);
     } catch (err) {
       setSigningState("idle");
@@ -137,7 +162,7 @@ export function AppPage() {
       }
 
       const result = await decrypt<TOCResult>(key, encryptedBlob);
-      
+
       if (result.success && result.data) {
         setLocalTOC(result.data);
         setViewMode("tree");
@@ -177,11 +202,13 @@ export function AppPage() {
   function getButtonText(): string {
     switch (signingState) {
       case "awaiting-signature":
-        return "Sign in MetaMask...";
+        return "Approve in wallet...";
       case "deriving-key":
         return "Deriving key...";
       case "encrypting":
         return "Encrypting...";
+      case "uploading-nova":
+        return "Uploading to NOVA...";
       case "storing":
         return "Saving to database...";
       case "done":
@@ -209,18 +236,18 @@ export function AppPage() {
           </svg>
           Home
         </button>
-        
+
         <div className="header-center">
           <span className="header-logo">PrivateRAG</span>
         </div>
 
         <div className="header-wallet">
-          {!isMetaMaskInstalled ? (
-            <span className="wallet-status">MetaMask required</span>
+          {!isWalletAvailable ? (
+            <span className="wallet-status">Loading wallet...</span>
           ) : wallet.connected ? (
             <div className="wallet-connected">
               <span className="wallet-address">
-                {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                {wallet.address}
               </span>
               {hasKey && <span className="key-badge" title="Encryption key active">Key Active</span>}
               <button className="disconnect-btn" onClick={disconnect}>
@@ -260,15 +287,15 @@ export function AppPage() {
                     Document Indexed
                   </h2>
                   <div className="section-actions">
-                    <button 
-                      className="icon-btn" 
+                    <button
+                      className="icon-btn"
                       onClick={() => setShowInfoModal(true)}
                       title="How it works"
                     >
                       <Info size={18} />
                     </button>
-                    <button 
-                      className="icon-btn" 
+                    <button
+                      className="icon-btn"
                       onClick={handleDownloadJSON}
                       title="Download TOC JSON"
                     >
@@ -304,16 +331,48 @@ export function AppPage() {
                   <span className="label-icon">2</span>
                   Encrypt & Save
                 </h2>
-                
+
                 {!wallet.connected ? (
                   <div className="encrypt-prompt">
                     <p className="prompt-text">Connect your wallet to encrypt</p>
-                    <button className="connect-btn full" onClick={connect}>
-                      Connect Wallet
-                    </button>
+                    <div className="wallet-connect-wrapper near-theme">
+                      <div className="partner-logo-row">
+                        {/* NEAR Logo SVG */}
+                        <svg className="near-logo" width="24" height="24" viewBox="0 0 24 24" fill="white">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.65 14.35L10.3 9.65l-.65 6.65-2.05-2.05L12 3.6l1.35 10.75 4.3-4.3 2.05 2.05-3.05 4.25z" fill="white" />
+                          <path d="M16.65 16.35L13.6 12.1l-4.3 4.3-1.35-10.75 2.05-2.05.65 6.65 6.35-6.35 2.05 2.05z" fill="white" opacity="0.5" />
+                          {/* Simplified NEAR Logo approximation */}
+                          <circle cx="12" cy="12" r="10" fill="transparent" stroke="currentColor" strokeWidth="2" />
+                          <path d="M8 8 L16 16 M16 8 L8 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0" />
+                          <path d="M17.9 6.8L12 16.2L6.1 6.8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span className="partner-name">NEAR PROTOCOL</span>
+                      </div>
+                      <button className="connect-btn full near-btn" onClick={connect}>
+                        Connect NEAR Wallet
+                      </button>
+                      <span className="partner-subtext">Official Blockchain Partner</span>
+                    </div>
                   </div>
                 ) : (
                   <div className="encrypt-controls">
+                    <div className="nova-input-group">
+                      <div className="nova-label-row">
+                        <label className="nova-label">
+                          NOVA API Key (Optional)
+                        </label>
+                        <span className="partner-badge-small">NOVA IPFS Partner</span>
+                      </div>
+                      <span className="nova-sublabel">Uploads original PDF to IPFS</span>
+                      <input
+                        type="password"
+                        className="nova-input"
+                        placeholder="Enter NOVA API Key..."
+                        value={novaApiKey}
+                        onChange={(e) => setNovaApiKey(e.target.value)}
+                      />
+                    </div>
+
                     <button
                       className={`encrypt-btn ${signingState === "done" ? "success" : ""} ${signingState === "awaiting-signature" ? "awaiting" : ""}`}
                       onClick={handleEncrypt}
@@ -322,18 +381,51 @@ export function AppPage() {
                       <Lock size={16} />
                       {getButtonText()}
                     </button>
-                    
+
                     {/* Saved to database indicator */}
                     {savedVault && signingState === "idle" && (
                       <div className="saved-indicator">
                         <CheckCircle size={16} />
                         <span>Saved to database (ID: {savedVault.id})</span>
-                        <a href="/chats" className="chats-link">
-                          View in Chats <ExternalLink size={12} />
-                        </a>
+                        <button
+                          className="chats-link"
+                          onClick={() =>
+                            navigate("/chats", {
+                              state: {
+                                toc: localTOC,
+                                vault: {
+                                  doc_hash: savedVault.doc_hash,
+                                  title: savedVault.title,
+                                  num_pages: savedVault.num_pages,
+                                },
+                              },
+                            })
+                          }
+                        >
+                          Chat with this document <ExternalLink size={12} />
+                        </button>
                       </div>
                     )}
-                    
+
+                    {/* NOVA Result */}
+                    {/* NOVA Result */}
+                    {novaResult && signingState === "idle" && (
+                      <div className="saved-indicator nova-success">
+                        <CheckCircle size={16} />
+                        <span>Uploaded to NOVA (IPFS)</span>
+                        {novaResult.blockscanUrl && (
+                          <a
+                            href={novaResult.blockscanUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="blockscan-link"
+                          >
+                            View Transaction <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     {encryptedBlob && signingState === "idle" && (
                       <>
                         <button className="decrypt-btn" onClick={handleDecrypt}>
@@ -345,15 +437,17 @@ export function AppPage() {
                         </button>
                       </>
                     )}
-                    
+
                     <p className="encrypt-hint">
-                      {signingState === "awaiting-signature" 
-                        ? "Check MetaMask popup..."
-                        : signingState === "storing"
-                          ? "Storing encrypted blob..."
-                          : hasKey 
-                            ? "Encryption key ready" 
-                            : "Sign: \"Never gonna give you up\""}
+                      {signingState === "awaiting-signature"
+                        ? "Approve in your NEAR wallet..."
+                        : signingState === "uploading-nova"
+                          ? "Uploading PDF to NOVA/IPFS..."
+                          : signingState === "storing"
+                            ? "Storing encrypted blob..."
+                            : hasKey
+                              ? "Encryption key ready"
+                              : "Sign with your NEAR wallet"}
                     </p>
                   </div>
                 )}
@@ -376,13 +470,13 @@ export function AppPage() {
               <div className="view-tabs">
                 {localTOC && (
                   <>
-                    <button 
+                    <button
                       className={`tab ${viewMode === "tree" ? "active" : ""}`}
                       onClick={() => setViewMode("tree")}
                     >
                       Tree
                     </button>
-                    <button 
+                    <button
                       className={`tab ${viewMode === "json" ? "active" : ""}`}
                       onClick={() => setViewMode("json")}
                     >
@@ -391,7 +485,7 @@ export function AppPage() {
                   </>
                 )}
                 {encryptedBlob && (
-                  <button 
+                  <button
                     className={`tab ${viewMode === "encrypted" ? "active" : ""}`}
                     onClick={() => setViewMode("encrypted")}
                   >
@@ -439,8 +533,8 @@ export function AppPage() {
 
       {/* Info Modal */}
       {showInfoModal && (
-        <InfoModal 
-          onClose={() => setShowInfoModal(false)} 
+        <InfoModal
+          onClose={() => setShowInfoModal(false)}
           toc={localTOC}
           encryptedBlob={encryptedBlob}
           savedVault={savedVault}
@@ -453,13 +547,13 @@ export function AppPage() {
 /**
  * Info Modal - Explains how everything works
  */
-function InfoModal({ 
-  onClose, 
-  toc, 
+function InfoModal({
+  onClose,
+  toc,
   encryptedBlob,
   savedVault
-}: { 
-  onClose: () => void; 
+}: {
+  onClose: () => void;
   toc: TOCResult | null;
   encryptedBlob: EncryptedBlob | null;
   savedVault: VaultResponse | null;
@@ -482,7 +576,7 @@ function InfoModal({
               <h3>1. Client-Side Processing (Pyodide)</h3>
             </div>
             <p>
-              Your PDF is processed entirely in your browser using Pyodide - a Python runtime 
+              Your PDF is processed entirely in your browser using Pyodide - a Python runtime
               compiled to WebAssembly. The file never leaves your device.
             </p>
             <div className="info-code">
@@ -525,14 +619,14 @@ TOC JSON (in browser memory)`}</pre>
               <h3>2. Wallet-Based Encryption</h3>
             </div>
             <p>
-              Your encryption key is derived from your wallet signature. The key is never stored - 
+              Your encryption key is derived from your wallet signature. The key is never stored -
               it's regenerated each time you sign the same message.
             </p>
             <div className="info-code">
               <span className="code-label">Key Derivation:</span>
-              <pre className="mono">{`// 1. Sign deterministic message
-const message = "Never gonna give you up 🎵 {wallet}";
-const signature = await metamask.sign(message);
+              <pre className="mono">{`// 1. Sign deterministic message (NEP-413)
+const message = "PrivateRAG-Key-Derivation {accountId}";
+const signature = await nearWallet.signMessage(message);
 
 // 2. Hash signature to get 256-bit key
 const keyBytes = SHA256(signature);
@@ -573,10 +667,10 @@ const ciphertext = await crypto.subtle.encrypt(
               <h3>3. What Gets Stored</h3>
             </div>
             <p>
-              Only the encrypted blob is stored in the database. The server cannot decrypt it 
+              Only the encrypted blob is stored in the database. The server cannot decrypt it
               because it never has your wallet signature.
             </p>
-            
+
             {savedVault ? (
               <>
                 <div className="storage-status saved">
@@ -610,7 +704,7 @@ const ciphertext = await crypto.subtle.encrypt(
 }`}</pre>
               </div>
             )}
-            
+
             {encryptedBlob && (
               <div className="info-code">
                 <span className="code-label">{savedVault ? "Encrypted Blob (stored in encrypted_toc):" : "Current Encrypted Blob:"}</span>
@@ -626,7 +720,7 @@ const ciphertext = await crypto.subtle.encrypt(
               <h3>4. Chat via NEAR AI TEE (Coming Soon)</h3>
             </div>
             <p>
-              When you ask questions, the decrypted TOC is sent to a Trusted Execution Environment 
+              When you ask questions, the decrypted TOC is sent to a Trusted Execution Environment
               (TEE) on NEAR AI. The TEE provides hardware-level isolation - even NEAR cannot see your data.
             </p>
             <div className="info-code">

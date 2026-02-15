@@ -1,10 +1,12 @@
 
-export type WalletType = "metamask" | "near";
+export type WalletType = "near";
 
 export interface WalletState {
   connected: boolean;
   type: WalletType | null;
+  /** NEAR account ID (e.g. alice.testnet) */
   address: string | null;
+  /** Network ID (testnet / mainnet) */
   chainId: string | null;
 }
 
@@ -14,23 +16,3 @@ export interface SignatureResult {
   message?: string;
   error?: string;
 }
-
-/**
- * Ethereum provider interface (MetaMask)
- */
-export interface EthereumProvider {
-  isMetaMask?: boolean;
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
-}
-
-/**
- * Window with ethereum property
- */
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
-}
-

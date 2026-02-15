@@ -2,34 +2,54 @@
  * Chats Page - Chat with encrypted documents
  */
 
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { 
-  FileText, 
-  Lock, 
-  Plus, 
-  ChevronRight, 
-  MessageSquare, 
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  FileText,
+  Lock,
+  Plus,
+  ChevronRight,
+  MessageSquare,
   ArrowLeft,
   RefreshCw,
-  Unlock
+  Unlock,
+  Send,
+  BookOpen,
+  AlertCircle,
 } from "lucide-react";
 import { useWallet } from "../hooks/useWallet";
-import { listVaultSummaries, getVault, type VaultSummary, type VaultResponse } from "../services/vault";
+import {
+  listVaultSummaries,
+  getVault,
+  type VaultSummary,
+  type VaultResponse,
+} from "../services/vault";
 import { decrypt, type EncryptedBlob } from "../lib/crypto";
 import type { TOCResult, TOCNode } from "../lib/pyodide";
+import {
+  answerQuestionOverTree,
+  type ChatMessage,
+  type HistoryEntry,
+} from "../lib/chat";
+import { initNearAI, isNearAIReady } from "../lib/nearai";
 import "./Chats.css";
+
+// Local storage key for API key (shared with LocalPdfIndexer)
+const API_KEY_STORAGE_KEY = "to_be_put_by_the_user";
 
 export function Chats() {
   const navigate = useNavigate();
-  const { 
-    wallet, 
-    isConnecting, 
-    hasKey, 
-    connect, 
-    deriveKey, 
+  const location = useLocation();
+  const {
+    wallet,
+    isConnecting,
+    hasKey,
+    connect,
+    deriveKey,
     getKey,
-    isMetaMaskInstalled 
+    isWalletAvailable,
   } = useWallet();
 
   // Vault list state
@@ -43,7 +63,23 @@ export function Chats() {
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [decryptError, setDecryptError] = useState<string | null>(null);
 
-  // Fetch vaults when wallet connects
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [showTOC, setShowTOC] = useState(false);
+
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isSending]);
+
+  // Fetch vaults when wallet connects or page is navigated to
   useEffect(() => {
     if (wallet.connected && wallet.address) {
       fetchVaults();
@@ -51,21 +87,54 @@ export function Chats() {
       setVaults([]);
       setSelectedVault(null);
       setDecryptedTOC(null);
+      setMessages([]);
     }
   }, [wallet.connected, wallet.address]);
 
+  // Re-fetch vaults when the tab becomes visible (e.g. switching back from App page)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible" && wallet.connected && wallet.address) {
+        fetchVaults();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [wallet.connected, wallet.address]);
+
+  // Pick up TOC passed from App page via route state
+  useEffect(() => {
+    const state = location.state as { toc?: TOCResult; vault?: VaultSummary } | null;
+    if (state?.toc && state?.vault) {
+      setSelectedVault(state.vault);
+      setDecryptedTOC(state.toc);
+      // Clear the state so refreshing doesn't re-apply
+      window.history.replaceState({}, "");
+    }
+  }, [location.state]);
+
+  // Initialize NEAR AI client from stored API key
+  useEffect(() => {
+    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (storedKey && !isNearAIReady()) {
+      initNearAI(storedKey);
+    }
+  }, []);
+
   async function fetchVaults() {
     if (!wallet.address) return;
-    
+
     setIsLoadingVaults(true);
     setVaultsError(null);
-    
+
     try {
       const data = await listVaultSummaries(wallet.address);
       setVaults(data);
     } catch (err) {
       console.error("Failed to fetch vaults:", err);
-      setVaultsError(err instanceof Error ? err.message : "Failed to load documents");
+      setVaultsError(
+        err instanceof Error ? err.message : "Failed to load documents"
+      );
     } finally {
       setIsLoadingVaults(false);
     }
@@ -75,6 +144,9 @@ export function Chats() {
     setSelectedVault(vault);
     setDecryptedTOC(null);
     setDecryptError(null);
+    setMessages([]);
+    setChatError(null);
+    setShowTOC(false);
   }
 
   async function handleDecryptVault() {
@@ -96,22 +168,89 @@ export function Chats() {
       }
 
       // Fetch full vault with encrypted_toc
-      const fullVault: VaultResponse = await getVault(selectedVault.doc_hash, wallet.address);
-      
+      const fullVault: VaultResponse = await getVault(
+        selectedVault.doc_hash,
+        wallet.address
+      );
+
       // Parse and decrypt
       const encryptedBlob: EncryptedBlob = JSON.parse(fullVault.encrypted_toc);
       const result = await decrypt<TOCResult>(key, encryptedBlob);
 
       if (result.success && result.data) {
         setDecryptedTOC(result.data);
+        // Focus chat input after decryption
+        setTimeout(() => chatInputRef.current?.focus(), 200);
       } else {
         setDecryptError(result.error || "Decryption failed");
       }
     } catch (err) {
       console.error("Decrypt error:", err);
-      setDecryptError(err instanceof Error ? err.message : "Failed to decrypt");
+      setDecryptError(
+        err instanceof Error ? err.message : "Failed to decrypt"
+      );
     } finally {
       setIsDecrypting(false);
+    }
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatInput.trim() || isSending || !decryptedTOC) return;
+
+    // Check NEAR AI client
+    if (!isNearAIReady()) {
+      setChatError(
+        "NEAR AI API key not configured. Set it in the App page first."
+      );
+      return;
+    }
+
+    const question = chatInput.trim();
+    setChatInput("");
+    setChatError(null);
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: question,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsSending(true);
+
+    try {
+      // Build history from previous messages
+      const history: HistoryEntry[] = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const answer = await answerQuestionOverTree(
+        question,
+        decryptedTOC,
+        history
+      );
+
+      const assistantMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: answer,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (err) {
+      console.error("Chat error:", err);
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `Error: ${err instanceof Error ? err.message : "Failed to get response"}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsSending(false);
     }
   }
 
@@ -128,23 +267,27 @@ export function Chats() {
           <ArrowLeft size={20} />
           Home
         </button>
-        
+
         <div className="header-center">
           <span className="header-logo">PrivateRAG Chats</span>
         </div>
 
         <div className="header-wallet">
-          {!isMetaMaskInstalled ? (
-            <span className="wallet-status">MetaMask required</span>
+          {!isWalletAvailable ? (
+            <span className="wallet-status">Loading wallet...</span>
           ) : wallet.connected ? (
             <div className="wallet-connected">
               <span className="wallet-address">
-                {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                {wallet.address}
               </span>
               {hasKey && <span className="key-badge">Key Active</span>}
             </div>
           ) : (
-            <button className="connect-btn" onClick={connect} disabled={isConnecting}>
+            <button
+              className="connect-btn"
+              onClick={connect}
+              disabled={isConnecting}
+            >
               {isConnecting ? "Connecting..." : "Connect Wallet"}
             </button>
           )}
@@ -157,8 +300,12 @@ export function Chats() {
           <div className="connect-prompt">
             <Lock size={48} strokeWidth={1} />
             <h2>Connect Your Wallet</h2>
-            <p>Connect MetaMask to access your encrypted documents</p>
-            <button className="connect-btn large" onClick={connect} disabled={isConnecting}>
+            <p>Connect your NEAR wallet to access your encrypted documents</p>
+            <button
+              className="connect-btn large"
+              onClick={connect}
+              disabled={isConnecting}
+            >
               {isConnecting ? "Connecting..." : "Connect Wallet"}
             </button>
           </div>
@@ -169,16 +316,19 @@ export function Chats() {
               <div className="sidebar-header">
                 <h2 className="sidebar-title">Documents</h2>
                 <div className="sidebar-actions">
-                  <button 
-                    className="icon-btn" 
+                  <button
+                    className="icon-btn"
                     onClick={fetchVaults}
                     disabled={isLoadingVaults}
                     title="Refresh"
                   >
-                    <RefreshCw size={16} className={isLoadingVaults ? "spinning" : ""} />
+                    <RefreshCw
+                      size={16}
+                      className={isLoadingVaults ? "spinning" : ""}
+                    />
                   </button>
-                  <button 
-                    className="icon-btn primary" 
+                  <button
+                    className="icon-btn primary"
                     onClick={() => navigate("/app")}
                     title="Add new document"
                   >
@@ -202,7 +352,10 @@ export function Chats() {
                   <div className="sidebar-empty">
                     <FileText size={32} strokeWidth={1} />
                     <p>No documents yet</p>
-                    <button className="add-doc-btn" onClick={() => navigate("/app")}>
+                    <button
+                      className="add-doc-btn"
+                      onClick={() => navigate("/app")}
+                    >
                       <Plus size={16} />
                       Add Document
                     </button>
@@ -210,7 +363,7 @@ export function Chats() {
                 ) : (
                   <ul className="documents-list">
                     {vaults.map((vault) => (
-                      <li 
+                      <li
                         key={vault.doc_hash}
                         className={`document-item ${selectedVault?.doc_hash === vault.doc_hash ? "selected" : ""}`}
                         onClick={() => handleSelectVault(vault)}
@@ -223,7 +376,13 @@ export function Chats() {
                           <span className="doc-meta">
                             {vault.num_pages} pages
                             {vault.created_at && (
-                              <> · {new Date(vault.created_at).toLocaleDateString()}</>
+                              <>
+                                {" "}
+                                ·{" "}
+                                {new Date(
+                                  vault.created_at
+                                ).toLocaleDateString()}
+                              </>
                             )}
                           </span>
                         </div>
@@ -247,14 +406,20 @@ export function Chats() {
                 <div className="decrypt-prompt">
                   <Lock size={48} strokeWidth={1} />
                   <h3>{selectedVault.title}</h3>
-                  <p>This document is encrypted. Sign to decrypt and chat.</p>
-                  <button 
-                    className="decrypt-btn large" 
+                  <p>
+                    This document is encrypted. Sign to decrypt and chat.
+                  </p>
+                  <button
+                    className="decrypt-btn large"
                     onClick={handleDecryptVault}
                     disabled={isDecrypting}
                   >
                     <Unlock size={18} />
-                    {isDecrypting ? "Decrypting..." : hasKey ? "Decrypt" : "Sign & Decrypt"}
+                    {isDecrypting
+                      ? "Decrypting..."
+                      : hasKey
+                        ? "Decrypt"
+                        : "Sign & Decrypt"}
                   </button>
                   {decryptError && (
                     <div className="decrypt-error">{decryptError}</div>
@@ -262,33 +427,165 @@ export function Chats() {
                 </div>
               ) : (
                 <div className="chat-active">
+                  {/* Chat Header */}
                   <div className="chat-header">
                     <div className="chat-doc-info">
                       <FileText size={20} />
-                      <span className="chat-doc-title">{decryptedTOC.doc_name}</span>
-                      <span className="chat-doc-pages">{decryptedTOC.num_pages} pages</span>
+                      <span className="chat-doc-title">
+                        {decryptedTOC.doc_name}
+                      </span>
+                      <span className="chat-doc-pages">
+                        {decryptedTOC.num_pages} pages
+                      </span>
                     </div>
-                    <div className="decrypted-badge">
-                      <Unlock size={14} />
-                      Decrypted
+                    <div className="chat-header-actions">
+                      <button
+                        className={`toc-toggle-btn ${showTOC ? "active" : ""}`}
+                        onClick={() => setShowTOC((v) => !v)}
+                        title="Toggle document structure"
+                      >
+                        <BookOpen size={16} />
+                        TOC
+                      </button>
+                      <div className="decrypted-badge">
+                        <Unlock size={14} />
+                        Decrypted
+                      </div>
                     </div>
                   </div>
 
-                  <div className="chat-content">
-                    <div className="toc-preview">
-                      <h4>Document Structure</h4>
-                      <div className="toc-tree">
-                        <TOCTree nodes={decryptedTOC.structure} />
+                  {/* Chat Body */}
+                  <div className="chat-body">
+                    {/* Optional TOC sidebar */}
+                    {showTOC && (
+                      <div className="toc-sidebar">
+                        <h4>Document Structure</h4>
+                        <div className="toc-tree">
+                          <TOCTree nodes={decryptedTOC.structure} />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="chat-placeholder">
-                      <MessageSquare size={32} strokeWidth={1} />
-                      <h4>Chat Coming Soon</h4>
-                      <p>
-                        NEAR AI TEE integration is in development.
-                        Your decrypted TOC will be sent to a secure enclave for processing.
-                      </p>
+                    {/* Messages Area */}
+                    <div className="chat-messages-area">
+                      <div className="chat-messages-scroll">
+                        {messages.length === 0 ? (
+                          <div className="chat-welcome">
+                            <MessageSquare
+                              size={36}
+                              strokeWidth={1}
+                              className="welcome-icon"
+                            />
+                            <h4>Chat with your document</h4>
+                            <p>
+                              Ask questions about{" "}
+                              <strong>{decryptedTOC.doc_name}</strong>. The
+                              document's structure and summaries are sent to the
+                              LLM as context.
+                            </p>
+                            <div className="suggested-questions">
+                              {[
+                                "What topics does this document cover?",
+                                "Summarize the key points",
+                                "What is discussed in the first section?",
+                              ].map((q) => (
+                                <button
+                                  key={q}
+                                  className="suggested-q"
+                                  onClick={() => {
+                                    setChatInput(q);
+                                    chatInputRef.current?.focus();
+                                  }}
+                                >
+                                  {q}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          messages.map((msg) => (
+                            <div
+                              key={msg.id}
+                              className={`chat-msg ${msg.role}`}
+                            >
+                              <div className="chat-msg-avatar">
+                                {msg.role === "user" ? "You" : "AI"}
+                              </div>
+                              <div className="chat-msg-body">
+                                <div className="chat-msg-content">
+                                  {msg.role === "assistant" ? (
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                    >
+                                      {msg.content}
+                                    </ReactMarkdown>
+                                  ) : (
+                                    <p>{msg.content}</p>
+                                  )}
+                                </div>
+                                <span className="chat-msg-time">
+                                  {msg.timestamp.toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+
+                        {/* Typing indicator */}
+                        {isSending && (
+                          <div className="chat-msg assistant">
+                            <div className="chat-msg-avatar">AI</div>
+                            <div className="chat-msg-body">
+                              <div className="chat-msg-content">
+                                <div className="typing-dots">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div ref={messagesEndRef} />
+                      </div>
+
+                      {/* Error */}
+                      {chatError && (
+                        <div className="chat-error-bar">
+                          <AlertCircle size={16} />
+                          <span>{chatError}</span>
+                          <button onClick={() => setChatError(null)}>
+                            Dismiss
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Input */}
+                      <form
+                        className="chat-input-form"
+                        onSubmit={handleSendMessage}
+                      >
+                        <input
+                          ref={chatInputRef}
+                          type="text"
+                          className="chat-input"
+                          placeholder="Ask about your document..."
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          disabled={isSending}
+                        />
+                        <button
+                          type="submit"
+                          className="chat-send-btn"
+                          disabled={!chatInput.trim() || isSending}
+                        >
+                          <Send size={18} />
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </div>
@@ -312,8 +609,8 @@ function TOCTree({ nodes, level = 0 }: { nodes: TOCNode[]; level?: number }) {
           <div className="toc-tree-node">
             <span className="toc-tree-title">{node.title}</span>
             <span className="toc-tree-pages">
-              {node.start_index === node.end_index 
-                ? `p. ${node.start_index}` 
+              {node.start_index === node.end_index
+                ? `p. ${node.start_index}`
                 : `pp. ${node.start_index}-${node.end_index}`}
             </span>
           </div>
@@ -325,4 +622,3 @@ function TOCTree({ nodes, level = 0 }: { nodes: TOCNode[]; level?: number }) {
     </ul>
   );
 }
-

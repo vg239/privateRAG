@@ -105,7 +105,7 @@ export function Docs() {
                   <div className="sig-number">1</div>
                   <div className="sig-content">
                     <h4>Key Derivation Signature</h4>
-                    <p className="sig-message">"Never gonna give you up..."</p>
+                    <p className="sig-message">"PrivateRAG-Key-Derivation &#123;accountId&#125;"</p>
                     <p>
                       This signature is used to <strong>derive your encryption key</strong>.
                       The same wallet signing the same message always produces the same signature,
@@ -129,7 +129,7 @@ export function Docs() {
                     </p>
                     <p className="sig-why">
                       <HelpCircle size={14} />
-                      Why? Anyone can verify this signature matches your wallet address.
+                      Why? Anyone can verify this signature matches your NEAR account.
                       It proves the document belongs to you without revealing its contents.
                     </p>
                   </div>

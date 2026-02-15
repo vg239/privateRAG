@@ -14,17 +14,32 @@ const IV_LENGTH = 12; // bytes (96 bits, recommended for GCM)
 const TAG_LENGTH = 128; // bits (16 bytes)
 
 export async function deriveKeyFromSignature(signature: string): Promise<CryptoKey> {
-  // Remove 0x prefix if present
-  const cleanSig = signature.startsWith("0x") ? signature.slice(2) : signature;
-  
-  // Convert hex signature to bytes
-  const sigBytes = new Uint8Array(
-    cleanSig.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
-  );
-  
+  let sigBytes: Uint8Array;
+
+  // Auto-detect format: 0x-prefixed hex (Ethereum) vs hex vs base64 (NEAR)
+  if (signature.startsWith("0x")) {
+    // Ethereum-style 0x-prefixed hex
+    const cleanSig = signature.slice(2);
+    sigBytes = new Uint8Array(
+      cleanSig.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+  } else if (/^[0-9a-fA-F]+$/.test(signature)) {
+    // Plain hex string
+    sigBytes = new Uint8Array(
+      signature.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+  } else {
+    // Assume base64 (NEAR signatures)
+    const binary = atob(signature);
+    sigBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      sigBytes[i] = binary.charCodeAt(i);
+    }
+  }
+
   // Hash the signature with SHA-256 to get exactly 256 bits
-  const keyMaterial = await crypto.subtle.digest("SHA-256", sigBytes);
-  
+  const keyMaterial = await crypto.subtle.digest("SHA-256", sigBytes.buffer as ArrayBuffer);
+
   // Import as AES-GCM key
   const key = await crypto.subtle.importKey(
     "raw",
@@ -33,17 +48,18 @@ export async function deriveKeyFromSignature(signature: string): Promise<CryptoK
     false, // not extractable - prevents key leakage
     ["encrypt", "decrypt"]
   );
-  
+
   return key;
 }
+
 
 export async function encrypt<T>(key: CryptoKey, data: T): Promise<EncryptedBlob> {
   // Serialize data to JSON, then to UTF-8 bytes
   const plaintext = new TextEncoder().encode(JSON.stringify(data));
-  
+
   // Generate a random IV (MUST be unique per encryption)
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  
+
   // Encrypt with AES-GCM
   const ciphertextWithTag = await crypto.subtle.encrypt(
     {
@@ -54,14 +70,14 @@ export async function encrypt<T>(key: CryptoKey, data: T): Promise<EncryptedBlob
     key,
     plaintext
   );
-  
+
   // Web Crypto API appends the auth tag to the ciphertext
   // Split them for explicit storage
   const ciphertextBytes = new Uint8Array(ciphertextWithTag);
   const tagStart = ciphertextBytes.length - (TAG_LENGTH / 8);
   const ciphertext = ciphertextBytes.slice(0, tagStart);
   const authTag = ciphertextBytes.slice(tagStart);
-  
+
   // Return as base64-encoded blob
   return {
     iv: bytesToBase64(iv),
@@ -84,17 +100,17 @@ export async function decrypt<T = unknown>(
         error: `Unsupported encryption format: ${blob.algorithm} v${blob.version}`,
       };
     }
-    
+
     // Decode base64 components
     const iv = base64ToBytes(blob.iv);
     const ciphertext = base64ToBytes(blob.ciphertext);
     const authTag = base64ToBytes(blob.authTag);
-    
+
     // Reconstruct ciphertext + tag (Web Crypto expects them together)
     const ciphertextWithTag = new Uint8Array(ciphertext.length + authTag.length);
     ciphertextWithTag.set(ciphertext, 0);
     ciphertextWithTag.set(authTag, ciphertext.length);
-    
+
     // Decrypt
     const plaintext = await crypto.subtle.decrypt(
       {
@@ -105,11 +121,11 @@ export async function decrypt<T = unknown>(
       key,
       ciphertextWithTag.buffer as ArrayBuffer
     );
-    
+
     // Parse JSON
     const text = new TextDecoder().decode(plaintext);
     const data = JSON.parse(text) as T;
-    
+
     return { success: true, data };
   } catch (error) {
     // Decryption failure usually means wrong key or tampered data
