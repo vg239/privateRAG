@@ -21,16 +21,16 @@ export function AppPage() {
   const [localTOC, setLocalTOC] = useState<TOCResult | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
   const [showInfoModal, setShowInfoModal] = useState(false);
-  
+
   // Encryption state
   const [encryptedBlob, setEncryptedBlob] = useState<EncryptedBlob | null>(null);
   const [signingState, setSigningState] = useState<SigningState>("idle");
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
-  
+
   // Vault storage state
   const [savedVault, setSavedVault] = useState<VaultResponse | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
-  
+
   // Wallet hook
   const {
     wallet,
@@ -66,11 +66,11 @@ export function AppPage() {
 
     try {
       let key = getKey();
-      
+
       if (!key) {
         setSigningState("awaiting-signature");
         key = await deriveKey();
-        
+
         if (!key) {
           setSigningState("idle");
           setEncryptionError("Signature rejected - please try again");
@@ -82,7 +82,7 @@ export function AppPage() {
       setSigningState("encrypting");
       const blob = await encrypt(key, localTOC);
       setEncryptedBlob(blob);
-      
+
       console.log("Encrypted:", blob);
 
       // Auto-store in database
@@ -91,7 +91,7 @@ export function AppPage() {
         try {
           // Sign TOC hash for ownership verification
           const tocSignature = await signTOC(localTOC.doc_hash);
-          
+
           const vaultResponse = await createVault({
             owner_wallet: wallet.address.toLowerCase(),
             doc_hash: localTOC.doc_hash,
@@ -110,7 +110,7 @@ export function AppPage() {
 
       setViewMode("encrypted");
       setSigningState("done");
-      
+
       setTimeout(() => setSigningState("idle"), 2000);
     } catch (err) {
       setSigningState("idle");
@@ -137,7 +137,7 @@ export function AppPage() {
       }
 
       const result = await decrypt<TOCResult>(key, encryptedBlob);
-      
+
       if (result.success && result.data) {
         setLocalTOC(result.data);
         setViewMode("tree");
@@ -209,7 +209,7 @@ export function AppPage() {
           </svg>
           Home
         </button>
-        
+
         <div className="header-center">
           <span className="header-logo">PrivateRAG</span>
         </div>
@@ -260,15 +260,15 @@ export function AppPage() {
                     Document Indexed
                   </h2>
                   <div className="section-actions">
-                    <button 
-                      className="icon-btn" 
+                    <button
+                      className="icon-btn"
                       onClick={() => setShowInfoModal(true)}
                       title="How it works"
                     >
                       <Info size={18} />
                     </button>
-                    <button 
-                      className="icon-btn" 
+                    <button
+                      className="icon-btn"
                       onClick={handleDownloadJSON}
                       title="Download TOC JSON"
                     >
@@ -304,7 +304,7 @@ export function AppPage() {
                   <span className="label-icon">2</span>
                   Encrypt & Save
                 </h2>
-                
+
                 {!wallet.connected ? (
                   <div className="encrypt-prompt">
                     <p className="prompt-text">Connect your wallet to encrypt</p>
@@ -322,18 +322,32 @@ export function AppPage() {
                       <Lock size={16} />
                       {getButtonText()}
                     </button>
-                    
+
                     {/* Saved to database indicator */}
                     {savedVault && signingState === "idle" && (
                       <div className="saved-indicator">
                         <CheckCircle size={16} />
                         <span>Saved to database (ID: {savedVault.id})</span>
-                        <a href="/chats" className="chats-link">
-                          View in Chats <ExternalLink size={12} />
-                        </a>
+                        <button
+                          className="chats-link"
+                          onClick={() =>
+                            navigate("/chats", {
+                              state: {
+                                toc: localTOC,
+                                vault: {
+                                  doc_hash: savedVault.doc_hash,
+                                  title: savedVault.title,
+                                  num_pages: savedVault.num_pages,
+                                },
+                              },
+                            })
+                          }
+                        >
+                          Chat with this document <ExternalLink size={12} />
+                        </button>
                       </div>
                     )}
-                    
+
                     {encryptedBlob && signingState === "idle" && (
                       <>
                         <button className="decrypt-btn" onClick={handleDecrypt}>
@@ -345,14 +359,14 @@ export function AppPage() {
                         </button>
                       </>
                     )}
-                    
+
                     <p className="encrypt-hint">
-                      {signingState === "awaiting-signature" 
+                      {signingState === "awaiting-signature"
                         ? "Check MetaMask popup..."
                         : signingState === "storing"
                           ? "Storing encrypted blob..."
-                          : hasKey 
-                            ? "Encryption key ready" 
+                          : hasKey
+                            ? "Encryption key ready"
                             : "Sign: \"Never gonna give you up\""}
                     </p>
                   </div>
@@ -376,13 +390,13 @@ export function AppPage() {
               <div className="view-tabs">
                 {localTOC && (
                   <>
-                    <button 
+                    <button
                       className={`tab ${viewMode === "tree" ? "active" : ""}`}
                       onClick={() => setViewMode("tree")}
                     >
                       Tree
                     </button>
-                    <button 
+                    <button
                       className={`tab ${viewMode === "json" ? "active" : ""}`}
                       onClick={() => setViewMode("json")}
                     >
@@ -391,7 +405,7 @@ export function AppPage() {
                   </>
                 )}
                 {encryptedBlob && (
-                  <button 
+                  <button
                     className={`tab ${viewMode === "encrypted" ? "active" : ""}`}
                     onClick={() => setViewMode("encrypted")}
                   >
@@ -439,8 +453,8 @@ export function AppPage() {
 
       {/* Info Modal */}
       {showInfoModal && (
-        <InfoModal 
-          onClose={() => setShowInfoModal(false)} 
+        <InfoModal
+          onClose={() => setShowInfoModal(false)}
           toc={localTOC}
           encryptedBlob={encryptedBlob}
           savedVault={savedVault}
@@ -453,13 +467,13 @@ export function AppPage() {
 /**
  * Info Modal - Explains how everything works
  */
-function InfoModal({ 
-  onClose, 
-  toc, 
+function InfoModal({
+  onClose,
+  toc,
   encryptedBlob,
   savedVault
-}: { 
-  onClose: () => void; 
+}: {
+  onClose: () => void;
   toc: TOCResult | null;
   encryptedBlob: EncryptedBlob | null;
   savedVault: VaultResponse | null;
@@ -482,7 +496,7 @@ function InfoModal({
               <h3>1. Client-Side Processing (Pyodide)</h3>
             </div>
             <p>
-              Your PDF is processed entirely in your browser using Pyodide - a Python runtime 
+              Your PDF is processed entirely in your browser using Pyodide - a Python runtime
               compiled to WebAssembly. The file never leaves your device.
             </p>
             <div className="info-code">
@@ -525,7 +539,7 @@ TOC JSON (in browser memory)`}</pre>
               <h3>2. Wallet-Based Encryption</h3>
             </div>
             <p>
-              Your encryption key is derived from your wallet signature. The key is never stored - 
+              Your encryption key is derived from your wallet signature. The key is never stored -
               it's regenerated each time you sign the same message.
             </p>
             <div className="info-code">
@@ -573,10 +587,10 @@ const ciphertext = await crypto.subtle.encrypt(
               <h3>3. What Gets Stored</h3>
             </div>
             <p>
-              Only the encrypted blob is stored in the database. The server cannot decrypt it 
+              Only the encrypted blob is stored in the database. The server cannot decrypt it
               because it never has your wallet signature.
             </p>
-            
+
             {savedVault ? (
               <>
                 <div className="storage-status saved">
@@ -610,7 +624,7 @@ const ciphertext = await crypto.subtle.encrypt(
 }`}</pre>
               </div>
             )}
-            
+
             {encryptedBlob && (
               <div className="info-code">
                 <span className="code-label">{savedVault ? "Encrypted Blob (stored in encrypted_toc):" : "Current Encrypted Blob:"}</span>
@@ -626,7 +640,7 @@ const ciphertext = await crypto.subtle.encrypt(
               <h3>4. Chat via NEAR AI TEE (Coming Soon)</h3>
             </div>
             <p>
-              When you ask questions, the decrypted TOC is sent to a Trusted Execution Environment 
+              When you ask questions, the decrypted TOC is sent to a Trusted Execution Environment
               (TEE) on NEAR AI. The TEE provides hardware-level isolation - even NEAR cannot see your data.
             </p>
             <div className="info-code">
