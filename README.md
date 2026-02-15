@@ -2,8 +2,6 @@
 
 **Vectorless, reasoning-based RAG with end-to-end encryption.** Your documents. Your keys.
 
----
-
 ## The Problem
 
 Traditional RAG systems rely on **vectorization**: documents are split into chunks, turned into embeddings, and stored in vector databases. That implies:
@@ -14,11 +12,10 @@ Traditional RAG systems rely on **vectorization**: documents are split into chun
 
 PrivateRAG avoids vectors entirely. We use a hierarchical table of contents (PageIndex-style) and keep encryption in your hands.
 
----
 
-## How It Works
+## Our solution
 
-Aligned with the in-app docs:
+Aligned with the in-app docs `/docs`:
 
 1. **Client-side PDF processing**  
    Your PDF never leaves the device. Text is extracted in the browser with **Pyodide** (Python in WebAssembly) and **pypdf**. Only extracted text is used for the next step.
@@ -34,12 +31,11 @@ Aligned with the in-app docs:
 
 5. **Decryption**  
    The client fetches the vault by `owner_wallet` and `doc_hash`, re-derives the decryption key from your key-derivation signature, and decrypts `encrypted_toc` with AES-256-GCM (IV and auth tag are in the blob). **What the hash and signature do:** `doc_hash` identifies which document the vault belongs to. `toc_signature` is the wallet signature of that hash; the client verifies (ECDSA recovery) that the signer equals `owner_wallet` before decrypting, so you know the vault was created by that wallet for that document and the blob was not swapped.
+ 
 
----
+## What gets on the server side?
 
-## Vaults: What Is Stored
-
-The server stores **only** what is needed to persist and list your encrypted TOC. Schema:
+The server stores **only** what is needed to persist and list your encrypted TOC in a table whose schema is as follows:
 
 | Column         | Type        | Description |
 |----------------|-------------|-------------|
@@ -57,7 +53,6 @@ The server stores **only** what is needed to persist and list your encrypted TOC
 
 The server never sees the raw PDF, the decrypted TOC, or your encryption key.
 
----
 
 ## Two Signatures and the Cryptographic Process
 
@@ -89,7 +84,6 @@ So: the first signature is for **confidentiality** (key derivation); the second 
 
 The server only persists and returns opaque blobs and metadata; it never has the key or the plaintext TOC.
 
----
 
 ## License
 
