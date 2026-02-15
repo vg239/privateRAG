@@ -18,7 +18,7 @@
 .bg-gradient {
   position: absolute;
   inset: 0;
-  background: 
+  background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.12), transparent),
     radial-gradient(ellipse 60% 40% at 100% 100%, rgba(6, 182, 212, 0.08), transparent);
 }
@@ -304,10 +304,143 @@
   margin: 0 0 1rem;
 }
 
+/* NEAR Partner Branding */
+.wallet-connect-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  align-items: center;
+  text-align: center;
+}
+
+.near-theme {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.partner-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.near-logo {
+  color: white;
+}
+
+.partner-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  color: white;
+}
+
+.connect-btn.near-btn {
+  background: white;
+  color: black;
+  font-weight: 600;
+}
+
+.connect-btn.near-btn:hover {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+}
+
+.partner-subtext {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nova-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.partner-badge-small {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: rgba(6, 182, 212, 0.1);
+  color: #06b6d4;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
 .encrypt-controls {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.nova-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.nova-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.nova-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.nova-input {
+  padding: 0.6rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.nova-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.nova-success {
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: #06b6d4;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.blockscan-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: #06b6d4;
+  text-decoration: underline;
+  margin-top: 0.25rem;
+}
+
+.blockscan-link:hover {
+  color: #22d3ee;
 }
 
 .encrypt-btn,
@@ -344,8 +477,15 @@
 }
 
 @keyframes pulse-btn {
-  0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
-  50% { box-shadow: 0 0 35px rgba(245, 158, 11, 0.5); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 35px rgba(245, 158, 11, 0.5);
+  }
 }
 
 .encrypt-btn.success {
@@ -686,7 +826,7 @@
   color: var(--text-primary);
 }
 
-.info-section > p {
+.info-section>p {
   font-size: 0.9rem;
   color: var(--text-secondary);
   line-height: 1.6;

@@ -46,6 +46,10 @@ app.add_middleware(
 app.include_router(vaults_router)
 app.include_router(chat_router)
 
+# TODO: Remove after hackathon
+from routers.hackathon import router as hackathon_router
+app.include_router(hackathon_router)
+
 
 @app.get("/", tags=["root"])
 async def root():

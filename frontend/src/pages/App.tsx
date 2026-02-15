@@ -11,14 +11,16 @@ import type { TOCResult } from "../lib/pyodide";
 import { useWallet } from "../hooks/useWallet";
 import { encrypt, decrypt, type EncryptedBlob } from "../lib/crypto";
 import { createVault, type VaultResponse } from "../services/vault";
+import { uploadToNova, type NovaUploadResult } from "../services/nova";
 import "./App.page.css";
 
 type ViewMode = "tree" | "json" | "encrypted";
-type SigningState = "idle" | "awaiting-signature" | "deriving-key" | "encrypting" | "storing" | "done";
+type SigningState = "idle" | "awaiting-signature" | "deriving-key" | "encrypting" | "uploading-nova" | "storing" | "done";
 
 export function AppPage() {
   const navigate = useNavigate();
   const [localTOC, setLocalTOC] = useState<TOCResult | null>(null);
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("tree");
   const [showInfoModal, setShowInfoModal] = useState(false);
 
@@ -26,6 +28,8 @@ export function AppPage() {
   const [encryptedBlob, setEncryptedBlob] = useState<EncryptedBlob | null>(null);
   const [signingState, setSigningState] = useState<SigningState>("idle");
   const [encryptionError, setEncryptionError] = useState<string | null>(null);
+  const [novaApiKey, setNovaApiKey] = useState("");
+  const [novaResult, setNovaResult] = useState<NovaUploadResult | null>(null);
 
   // Vault storage state
   const [savedVault, setSavedVault] = useState<VaultResponse | null>(null);
@@ -41,16 +45,18 @@ export function AppPage() {
     disconnect,
     deriveKey,
     getKey,
-    signTOC,
+    // signTOC,
     isWalletAvailable,
   } = useWallet();
 
-  function handleTOCGenerated(toc: TOCResult) {
+  function handleTOCGenerated(toc: TOCResult, file: File) {
     setLocalTOC(toc);
+    setCurrentFile(file);
     setEncryptedBlob(null);
     setEncryptionError(null);
     setSavedVault(null);
     setStorageError(null);
+    setNovaResult(null);
     setViewMode("tree");
     console.log("TOC generated:", toc);
   }
@@ -62,7 +68,9 @@ export function AppPage() {
     }
 
     setEncryptionError(null);
+    setEncryptionError(null);
     setStorageError(null);
+    setNovaResult(null);
 
     try {
       let key = getKey();
@@ -85,12 +93,28 @@ export function AppPage() {
 
       console.log("Encrypted:", blob);
 
+      // Upload to NOVA if API key is present
+      if (novaApiKey && currentFile) {
+        setSigningState("uploading-nova");
+        try {
+          const result = await uploadToNova(currentFile, novaApiKey);
+          setNovaResult(result);
+          console.log("Uploaded to NOVA:", result);
+        } catch (novaErr) {
+          console.error("NOVA Upload failed:", novaErr);
+          // Don't block the rest of the flow, but maybe show a warning?
+          // For now, we'll continue 
+          setEncryptionError("NOVA Upload failed: " + (novaErr instanceof Error ? novaErr.message : String(novaErr)));
+          return;
+        }
+      }
+
       // Auto-store in database
       if (wallet.address) {
         setSigningState("storing");
         try {
-          // Sign TOC hash for ownership verification
-          const tocSignature = await signTOC(localTOC.doc_hash);
+          // Sign TOC hash for ownership verification (REMOVED per user request to avoid double-signing)
+          // const tocSignature = await signTOC(localTOC.doc_hash);
 
           const vaultResponse = await createVault({
             owner_wallet: wallet.address.toLowerCase(),
@@ -98,7 +122,7 @@ export function AppPage() {
             title: localTOC.doc_name,
             num_pages: localTOC.num_pages,
             encrypted_toc: JSON.stringify(blob),
-            toc_signature: tocSignature || undefined,
+            // toc_signature: tocSignature || undefined,
           });
           setSavedVault(vaultResponse);
           console.log("Vault saved:", vaultResponse);
@@ -182,6 +206,8 @@ export function AppPage() {
         return "Deriving key...";
       case "encrypting":
         return "Encrypting...";
+      case "uploading-nova":
+        return "Uploading to NOVA...";
       case "storing":
         return "Saving to database...";
       case "done":
@@ -308,12 +334,44 @@ export function AppPage() {
                 {!wallet.connected ? (
                   <div className="encrypt-prompt">
                     <p className="prompt-text">Connect your wallet to encrypt</p>
-                    <button className="connect-btn full" onClick={connect}>
-                      Connect Wallet
-                    </button>
+                    <div className="wallet-connect-wrapper near-theme">
+                      <div className="partner-logo-row">
+                        {/* NEAR Logo SVG */}
+                        <svg className="near-logo" width="24" height="24" viewBox="0 0 24 24" fill="white">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.65 14.35L10.3 9.65l-.65 6.65-2.05-2.05L12 3.6l1.35 10.75 4.3-4.3 2.05 2.05-3.05 4.25z" fill="white" />
+                          <path d="M16.65 16.35L13.6 12.1l-4.3 4.3-1.35-10.75 2.05-2.05.65 6.65 6.35-6.35 2.05 2.05z" fill="white" opacity="0.5" />
+                          {/* Simplified NEAR Logo approximation */}
+                          <circle cx="12" cy="12" r="10" fill="transparent" stroke="currentColor" strokeWidth="2" />
+                          <path d="M8 8 L16 16 M16 8 L8 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0" />
+                          <path d="M17.9 6.8L12 16.2L6.1 6.8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span className="partner-name">NEAR PROTOCOL</span>
+                      </div>
+                      <button className="connect-btn full near-btn" onClick={connect}>
+                        Connect NEAR Wallet
+                      </button>
+                      <span className="partner-subtext">Official Blockchain Partner</span>
+                    </div>
                   </div>
                 ) : (
                   <div className="encrypt-controls">
+                    <div className="nova-input-group">
+                      <div className="nova-label-row">
+                        <label className="nova-label">
+                          NOVA API Key (Optional)
+                        </label>
+                        <span className="partner-badge-small">NOVA IPFS Partner</span>
+                      </div>
+                      <span className="nova-sublabel">Uploads original PDF to IPFS</span>
+                      <input
+                        type="password"
+                        className="nova-input"
+                        placeholder="Enter NOVA API Key..."
+                        value={novaApiKey}
+                        onChange={(e) => setNovaApiKey(e.target.value)}
+                      />
+                    </div>
+
                     <button
                       className={`encrypt-btn ${signingState === "done" ? "success" : ""} ${signingState === "awaiting-signature" ? "awaiting" : ""}`}
                       onClick={handleEncrypt}
@@ -348,6 +406,25 @@ export function AppPage() {
                       </div>
                     )}
 
+                    {/* NOVA Result */}
+                    {/* NOVA Result */}
+                    {novaResult && signingState === "idle" && (
+                      <div className="saved-indicator nova-success">
+                        <CheckCircle size={16} />
+                        <span>Uploaded to NOVA (IPFS)</span>
+                        {novaResult.blockscanUrl && (
+                          <a
+                            href={novaResult.blockscanUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="blockscan-link"
+                          >
+                            View Transaction <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     {encryptedBlob && signingState === "idle" && (
                       <>
                         <button className="decrypt-btn" onClick={handleDecrypt}>
@@ -363,11 +440,13 @@ export function AppPage() {
                     <p className="encrypt-hint">
                       {signingState === "awaiting-signature"
                         ? "Approve in your NEAR wallet..."
-                        : signingState === "storing"
-                          ? "Storing encrypted blob..."
-                          : hasKey
-                            ? "Encryption key ready"
-                            : "Sign with your NEAR wallet"}
+                        : signingState === "uploading-nova"
+                          ? "Uploading PDF to NOVA/IPFS..."
+                          : signingState === "storing"
+                            ? "Storing encrypted blob..."
+                            : hasKey
+                              ? "Encryption key ready"
+                              : "Sign with your NEAR wallet"}
                     </p>
                   </div>
                 )}
