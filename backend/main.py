@@ -1,11 +1,20 @@
+"""
+PrivateRAG Backend API
+
+Privacy-first document intelligence with client-side encryption.
+The backend only stores encrypted TOC blobs - it cannot read your data.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from sqlmodel import SQLModel
 import logging
 
 from config import settings
-from database.connection import supabase
-from routers import auth_router, users_router, documents_router, chat_router
+from database.db_config import engine, format_debug_string, DATABASE_URL
+from routers.vaults import router as vaults_router
+from routers.chat import router as chat_router
 
 # Configure logging
 logging.basicConfig(
@@ -15,52 +24,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup and shutdown events"""
-    # Startup
-    logger.info("Starting up application...")
-    # For Supabase, client is initialized at import time in database.connection
-    try:
-        # Simple connectivity check on startup (optional)
-        _ = supabase.table("documents").select("id").limit(1).execute()
-        logger.info("Supabase client initialized and reachable")
-    except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
-        # You may choose to raise here to prevent app start, but we'll just log
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down application...")
-    # Supabase client does not require explicit shutdown
-    try:
-        logger.info("Supabase client shutdown complete")
-    except Exception as e:
-        logger.error(f"Error during Supabase shutdown: {e}")
-
-
 # Create FastAPI app
 app = FastAPI(
-    title=settings.APP_NAME,
+    title="PrivateRAG API",
     version=settings.APP_VERSION,
-    description="A production-grade FastAPI application with repository pattern and asyncpg",
-    lifespan=lifespan
+    description="""
+    Privacy-first document intelligence with client-side encryption
+    """,
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include routers
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(documents_router)
+app.include_router(vaults_router)
 app.include_router(chat_router)
 
 
@@ -68,29 +51,12 @@ app.include_router(chat_router)
 async def root():
     """Root endpoint"""
     return {
-        "message": f"Welcome to {settings.APP_NAME}",
+        "name": "PrivateRAG API",
         "version": settings.APP_VERSION,
-        "docs": "/docs"
+        "docs": "/docs",
+        "description": "Privacy-first document intelligence with client-side encryption"
     }
 
-
-@app.get("/health", tags=["health"])
-async def health_check():
-    """Health check endpoint"""
-    try:
-        # Simple Supabase health check
-        _ = supabase.table("documents").select("id").limit(1).execute()
-        return {
-            "status": "healthy",
-            "database": "supabase_connected"
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "database": "supabase_disconnected",
-            "error": str(e)
-        }
 
 
 if __name__ == "__main__":
@@ -101,6 +67,3 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
-
-
-

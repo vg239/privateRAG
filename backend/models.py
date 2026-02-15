@@ -1,153 +1,77 @@
 from typing import Optional
 import datetime
-from sqlalchemy import Column, DateTime, Integer, String, Text, text, Index, Boolean
+from sqlalchemy import Column, DateTime, Integer, String, Text, text, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
-
-class User(SQLModel, table=True):
-    """User model with wallet address, authentication, and detailed metadata"""
-    __tablename__ = 'users'
+class Vault(SQLModel, table=True):
+    """
+    Privacy-first encrypted document vault.
+    
+    Stores client-side encrypted TOC (Table of Contents) generated via Pyodide/PageIndex.
+    The encryption key is derived from wallet signature and NEVER stored.
+    Only the owner can decrypt their TOC using their wallet.
+    """
+    
+    __tablename__ = "vaults"
     __table_args__ = (
-        Index('idx_users_wallet_address', 'wallet_address'),
-        Index('idx_users_username', 'username'),
-        Index('idx_users_email', 'email'),
+        Index("idx_vaults_owner_wallet", "owner_wallet"),
+        Index("idx_vaults_doc_hash", "doc_hash"),
+        Index("idx_vaults_created_at", "created_at"),
+        # Ensure each wallet can only have one vault per document
+        UniqueConstraint("owner_wallet", "doc_hash", name="uq_vaults_owner_doc"),
     )
     
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
+    id: int = Field(sa_column=Column("id", Integer, primary_key=True))
     
-    # Wallet and Authentication
-    wallet_address: str = Field(
-        sa_column=Column('wallet_address', String(255), nullable=False, unique=True),
-        description="User's blockchain wallet address (e.g., Ethereum, Solana)"
-    )
-    username: str = Field(
-        sa_column=Column('username', String(100), nullable=False, unique=True),
-        description="Unique username for the user"
-    )
-    password_hash: str = Field(
-        sa_column=Column('password_hash', String(255), nullable=False),
-        description="Bcrypt hashed password"
+    # Owner identification (wallet address - lowercase)
+    owner_wallet: str = Field(
+        sa_column=Column("owner_wallet", String(255), nullable=False),
+        description="Wallet address that owns this vault (e.g., 0x... or user.near)"
     )
     
-    # Personal Information
-    email: Optional[str] = Field(
+    # Document identification (SHA256 hash of original PDF bytes)
+    doc_hash: str = Field(
+        sa_column=Column("doc_hash", String(64), nullable=False),
+        description="SHA256 hash of the original PDF file for unique identification"
+    )
+    
+    # Human-readable document title
+    title: str = Field(
+        sa_column=Column("title", String(255), nullable=False),
+        description="Document title (usually the filename)"
+    )
+    
+    # Number of pages in the document
+    num_pages: Optional[int] = Field(
         default=None,
-        sa_column=Column('email', String(255), unique=True),
-        description="User's email address"
-    )
-    full_name: Optional[str] = Field(
-        default=None,
-        sa_column=Column('full_name', String(255)),
-        description="User's full name"
-    )
-    phone_number: Optional[str] = Field(
-        default=None,
-        sa_column=Column('phone_number', String(50)),
-        description="User's phone number"
+        sa_column=Column("num_pages", Integer),
+        description="Number of pages in the PDF"
     )
     
-    # Account Status
-    is_active: bool = Field(
-        default=True,
-        sa_column=Column('is_active', Boolean, server_default=text('true')),
-        description="Whether the user account is active"
+    # Encrypted TOC blob (AES-256-GCM encrypted)
+    # Format: { "ciphertext": "base64...", "iv": "base64...", "tag": "base64..." }
+    encrypted_toc: str = Field(
+        sa_column=Column("encrypted_toc", Text, nullable=False),
+        description="Client-side encrypted TOC (AES-256-GCM). Server cannot decrypt."
     )
-    is_verified: bool = Field(
-        default=False,
-        sa_column=Column('is_verified', Boolean, server_default=text('false')),
-        description="Whether the user has verified their account"
-    )
-    is_premium: bool = Field(
-        default=False,
-        sa_column=Column('is_premium', Boolean, server_default=text('false')),
-        description="Whether the user has premium subscription"
+    
+    # Wallet signature of TOC hash for ownership verification (OPTIONAL but recommended)
+    # Allows public verification: recoverAddress(hash(decrypted_toc), signature) === owner_wallet
+    toc_signature: Optional[str] = Field(
+        default=None,
+        sa_column=Column("toc_signature", String(200)),
+        description="Wallet signature of TOC hash for ownership proof and integrity verification"
     )
     
     # Timestamps
     created_at: Optional[datetime.datetime] = Field(
         default=None,
-        sa_column=Column('created_at', DateTime, server_default=text('CURRENT_TIMESTAMP')),
-        description="Account creation timestamp"
-    )
-    updated_at: Optional[datetime.datetime] = Field(
-        default=None,
-        sa_column=Column('updated_at', DateTime, server_default=text('CURRENT_TIMESTAMP')),
-        description="Last account update timestamp"
-    )
-    last_login: Optional[datetime.datetime] = Field(
-        default=None,
-        sa_column=Column('last_login', DateTime),
-        description="Last login timestamp"
-    )
-    
-    # Detailed Metadata (JSONB for flexible storage)
-    metadata_: Optional[dict] = Field(
-        default=None,
-        sa_column=Column('metadata', JSONB),
-        description="""Detailed user metadata stored as JSON. Can include:
-        - profile: {avatar_url, bio, location, website, social_links}
-        - preferences: {theme, language, notifications, privacy_settings}
-        - wallet_info: {wallet_type, network, verified_chains, nft_collections}
-        - subscription: {plan_type, start_date, end_date, features}
-        - activity: {total_logins, last_activity, favorite_features}
-        - security: {two_factor_enabled, backup_codes, security_questions}
-        - analytics: {usage_stats, feature_usage, engagement_metrics}
-        - custom_fields: {any additional custom data}
-        """
-    )
-
-
-class Document(SQLModel, table=True):
-    """Document indexed with a PageIndex tree and stored in Supabase Postgres."""
-
-    __tablename__ = "documents"
-    __table_args__ = (
-        Index("idx_documents_created_at", "created_at"),
-    )
-
-    id: int = Field(sa_column=Column("id", Integer, primary_key=True))
-
-    title: str = Field(
-        sa_column=Column("title", String(255), nullable=False),
-        description="Human-readable title, usually derived from file name",
-    )
-    file_path: str = Field(
-        sa_column=Column("file_path", String(1024), nullable=False),
-        description="Relative path on disk where the PDF is stored",
-    )
-
-    num_pages: Optional[int] = Field(
-        default=None,
-        sa_column=Column("num_pages", Integer),
-        description="Number of pages in the PDF (if known)",
-    )
-
-    status: str = Field(
-        default="pending",
-        sa_column=Column(
-            "status",
-            String(50),
-            nullable=False,
-            server_default=text("'pending'"),
-        ),
-        description="Indexing status: pending, indexing, ready, failed",
-    )
-
-    # Full PageIndex tree JSON (as produced by pageindex.page_index_main / run_pageindex.py)
-    tree: Optional[dict] = Field(
-        default=None,
-        sa_column=Column("tree", JSONB),
-        description="Stored PageIndex tree for this document",
-    )
-
-    created_at: Optional[datetime.datetime] = Field(
-        default=None,
         sa_column=Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
-        description="Document creation timestamp",
+        description="Vault creation timestamp"
     )
     updated_at: Optional[datetime.datetime] = Field(
         default=None,
         sa_column=Column("updated_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
-        description="Last update timestamp",
+        description="Last update timestamp"
     )
