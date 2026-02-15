@@ -18,8 +18,8 @@ load_dotenv(os.path.join(root_path, '.env'))
 from models import *
 
 # 3. Read the URL
-db_url = os.getenv("SUPABASE_URL")
-# print(f"Database url formigrations: {db_url}")
+db_url = os.getenv("DATABASE_URL")
+# print(f"Database url for migrations: {db_url}")
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
