@@ -22,7 +22,7 @@ interface UseWalletReturn {
   disconnect: () => void;
   deriveKey: () => Promise<CryptoKey | null>;
   getKey: () => CryptoKey | null;
-  // signTOC: (tocHash: string) => Promise<string | null>;
+  signTOC: (tocHash: string) => Promise<string | null>;
   /** Whether the NEAR wallet selector is initialised */
   isWalletAvailable: boolean;
 }
@@ -206,7 +206,7 @@ export function useWallet(): UseWalletReturn {
     disconnect,
     deriveKey,
     getKey,
-    // signTOC,
+    signTOC,
     isWalletAvailable: walletAvailable,
   };
 }

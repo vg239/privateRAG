@@ -45,7 +45,7 @@ export function AppPage() {
     disconnect,
     deriveKey,
     getKey,
-    // signTOC,
+    signTOC,
     isWalletAvailable,
   } = useWallet();
 
@@ -113,8 +113,8 @@ export function AppPage() {
       if (wallet.address) {
         setSigningState("storing");
         try {
-          // Sign TOC hash for ownership verification (REMOVED per user request to avoid double-signing)
-          // const tocSignature = await signTOC(localTOC.doc_hash);
+          // Sign TOC hash for ownership verification
+          const tocSignature = await signTOC(localTOC.doc_hash);
 
           const vaultResponse = await createVault({
             owner_wallet: wallet.address.toLowerCase(),
@@ -122,7 +122,7 @@ export function AppPage() {
             title: localTOC.doc_name,
             num_pages: localTOC.num_pages,
             encrypted_toc: JSON.stringify(blob),
-            // toc_signature: tocSignature || undefined,
+            toc_signature: tocSignature || undefined,
           });
           setSavedVault(vaultResponse);
           console.log("Vault saved:", vaultResponse);
