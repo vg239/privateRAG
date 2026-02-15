@@ -49,7 +49,7 @@ export function Chats() {
     connect,
     deriveKey,
     getKey,
-    isMetaMaskInstalled,
+    isWalletAvailable,
   } = useWallet();
 
   // Vault list state
@@ -273,12 +273,12 @@ export function Chats() {
         </div>
 
         <div className="header-wallet">
-          {!isMetaMaskInstalled ? (
-            <span className="wallet-status">MetaMask required</span>
+          {!isWalletAvailable ? (
+            <span className="wallet-status">Loading wallet...</span>
           ) : wallet.connected ? (
             <div className="wallet-connected">
               <span className="wallet-address">
-                {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                {wallet.address}
               </span>
               {hasKey && <span className="key-badge">Key Active</span>}
             </div>
@@ -300,7 +300,7 @@ export function Chats() {
           <div className="connect-prompt">
             <Lock size={48} strokeWidth={1} />
             <h2>Connect Your Wallet</h2>
-            <p>Connect MetaMask to access your encrypted documents</p>
+            <p>Connect your NEAR wallet to access your encrypted documents</p>
             <button
               className="connect-btn large"
               onClick={connect}

@@ -1,20 +1,18 @@
 
 export {
-  isMetaMaskAvailable,
-  connectMetaMask,
+  setupNearWallet,
+  isWalletReady,
+  connectNearWallet,
+  disconnectNearWallet,
   getConnectedAccount,
   buildKeyDerivationMessage,
-  signMessage,
   signForKeyDerivation,
   signTOCForOwnership,
   onAccountsChanged,
-  onChainChanged,
-} from "./metamask";
+} from "./near";
 
 export type {
   WalletType,
   WalletState,
   SignatureResult,
-  EthereumProvider,
 } from "./types";
-

@@ -1,8 +1,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  isMetaMaskAvailable,
-  connectMetaMask,
+  isWalletReady,
+  setupNearWallet,
+  connectNearWallet,
+  disconnectNearWallet,
   getConnectedAccount,
   signForKeyDerivation,
   signTOCForOwnership,
@@ -21,12 +23,12 @@ interface UseWalletReturn {
   deriveKey: () => Promise<CryptoKey | null>;
   getKey: () => CryptoKey | null;
   signTOC: (tocHash: string) => Promise<string | null>;
-  /** Whether MetaMask extension is installed */
-  isMetaMaskInstalled: boolean;
+  /** Whether the NEAR wallet selector is initialised */
+  isWalletAvailable: boolean;
 }
 
 /**
- * Hook for managing wallet connection and encryption key derivation
+ * Hook for managing NEAR wallet connection and encryption key derivation
  */
 export function useWallet(): UseWalletReturn {
   const [wallet, setWallet] = useState<WalletState>({
@@ -37,36 +39,39 @@ export function useWallet(): UseWalletReturn {
   });
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Store the derived key in memory (never persisted!)
   // This is intentional - user must re-sign after refresh for security
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
-  
-  const isMetaMaskInstalled = isMetaMaskAvailable();
 
-  // Check for existing connection on mount
-  useEffect(() => {
-    async function checkConnection() {
-      const address = await getConnectedAccount();
-      if (address) {
-        setWallet({
-          connected: true,
-          type: "metamask",
-          address,
-          chainId: null,
-        });
-      }
-    }
-    
-    if (isMetaMaskInstalled) {
-      checkConnection();
-    }
-  }, [isMetaMaskInstalled]);
+  const [walletAvailable, setWalletAvailable] = useState(false);
 
-  // Listen for account changes (user switches accounts in MetaMask)
+  // Initialise the NEAR wallet selector on mount
   useEffect(() => {
-    if (!isMetaMaskInstalled) return;
-    
+    setupNearWallet()
+      .then(() => {
+        setWalletAvailable(true);
+
+        // Check for existing connection
+        const accountId = getConnectedAccount();
+        if (accountId) {
+          setWallet({
+            connected: true,
+            type: "near",
+            address: accountId,
+            chainId: "testnet",
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to initialise NEAR wallet selector:", err);
+      });
+  }, []);
+
+  // Listen for account changes
+  useEffect(() => {
+    if (!isWalletReady()) return;
+
     const unsubscribe = onAccountsChanged((accounts) => {
       if (accounts.length === 0) {
         // Wallet disconnected
@@ -76,29 +81,31 @@ export function useWallet(): UseWalletReturn {
           address: null,
           chainId: null,
         });
-        setCryptoKey(null); // Clear key on disconnect
+        setCryptoKey(null);
       } else {
-        // Account changed - key must be re-derived for new account
-        setWallet((prev) => ({
-          ...prev,
-          address: accounts[0].toLowerCase(),
-        }));
-        setCryptoKey(null); // Clear key - different account = different key
+        // Account changed - key must be re-derived
+        setWallet({
+          connected: true,
+          type: "near",
+          address: accounts[0],
+          chainId: "testnet",
+        });
+        setCryptoKey(null);
       }
     });
-    
+
     return unsubscribe;
-  }, [isMetaMaskInstalled]);
+  }, [walletAvailable]);
 
   /**
-   * Connect to MetaMask
+   * Connect to NEAR wallet
    */
   const connect = useCallback(async () => {
     setError(null);
     setIsConnecting(true);
-    
+
     try {
-      const state = await connectMetaMask();
+      const state = await connectNearWallet();
       setWallet(state);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection failed");
@@ -108,10 +115,14 @@ export function useWallet(): UseWalletReturn {
   }, []);
 
   /**
-   * Disconnect wallet (client-side only)
-   * Note: This doesn't revoke MetaMask connection, just clears our state
+   * Disconnect wallet
    */
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    try {
+      await disconnectNearWallet();
+    } catch {
+      // Ignore disconnect errors
+    }
     setWallet({
       connected: false,
       type: null,
@@ -125,38 +136,29 @@ export function useWallet(): UseWalletReturn {
   /**
    * Derive encryption key from wallet signature.
    * 
-   * SIGNATURE #1 of 2
-   * 
-   * This prompts the user to sign a deterministic message.
+   * Uses NEP-413 signMessage with a deterministic message.
    * The signature is hashed (SHA-256) to derive an AES-256 key.
-   * 
-   * Why deterministic? Because the same wallet signing the same message
-   * always produces the same signature. This means:
-   * - We don't need to store the key
-   * - User can re-derive it anytime by signing again
-   * - If wallet is lost, documents are unrecoverable (by design)
    */
   const deriveKey = useCallback(async (): Promise<CryptoKey | null> => {
     if (!wallet.connected || !wallet.address) {
       setError("Wallet not connected");
       return null;
     }
-    
+
     setError(null);
-    
+
     try {
-      // Sign the key derivation message
       const result = await signForKeyDerivation(wallet.address);
-      
+
       if (!result.success || !result.signature) {
         setError(result.error || "Signing failed");
         return null;
       }
-      
+
       // Derive AES key from signature using SHA-256
       const key = await deriveKeyFromSignature(result.signature);
       setCryptoKey(key);
-      
+
       return key;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Key derivation failed");
@@ -173,20 +175,6 @@ export function useWallet(): UseWalletReturn {
 
   /**
    * Sign a TOC hash for ownership verification.
-   * 
-   * SIGNATURE #2 of 2
-   * 
-   * This creates a signature proving:
-   * 1. This wallet created this specific TOC
-   * 2. The TOC hasn't been tampered with
-   * 
-   * Unlike key derivation, this signature IS stored in the database.
-   * It allows anyone to verify ownership without decrypting the TOC.
-   * 
-   * Verification: recoverAddress(tocHash, signature) === owner_wallet
-   * 
-   * @param tocHash - SHA-256 hash of the TOC (doc_hash from TOCResult)
-   * @returns Signature hex string or null if user rejected
    */
   const signTOC = useCallback(async (tocHash: string): Promise<string | null> => {
     if (!wallet.connected || !wallet.address) {
@@ -196,7 +184,7 @@ export function useWallet(): UseWalletReturn {
 
     try {
       const result = await signTOCForOwnership(tocHash, wallet.address);
-      
+
       if (!result.success || !result.signature) {
         setError(result.error || "TOC signing failed");
         return null;
@@ -219,6 +207,6 @@ export function useWallet(): UseWalletReturn {
     deriveKey,
     getKey,
     signTOC,
-    isMetaMaskInstalled,
+    isWalletAvailable: walletAvailable,
   };
 }

@@ -42,7 +42,7 @@ export function AppPage() {
     deriveKey,
     getKey,
     signTOC,
-    isMetaMaskInstalled,
+    isWalletAvailable,
   } = useWallet();
 
   function handleTOCGenerated(toc: TOCResult) {
@@ -177,7 +177,7 @@ export function AppPage() {
   function getButtonText(): string {
     switch (signingState) {
       case "awaiting-signature":
-        return "Sign in MetaMask...";
+        return "Approve in wallet...";
       case "deriving-key":
         return "Deriving key...";
       case "encrypting":
@@ -215,12 +215,12 @@ export function AppPage() {
         </div>
 
         <div className="header-wallet">
-          {!isMetaMaskInstalled ? (
-            <span className="wallet-status">MetaMask required</span>
+          {!isWalletAvailable ? (
+            <span className="wallet-status">Loading wallet...</span>
           ) : wallet.connected ? (
             <div className="wallet-connected">
               <span className="wallet-address">
-                {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                {wallet.address}
               </span>
               {hasKey && <span className="key-badge" title="Encryption key active">Key Active</span>}
               <button className="disconnect-btn" onClick={disconnect}>
@@ -362,12 +362,12 @@ export function AppPage() {
 
                     <p className="encrypt-hint">
                       {signingState === "awaiting-signature"
-                        ? "Check MetaMask popup..."
+                        ? "Approve in your NEAR wallet..."
                         : signingState === "storing"
                           ? "Storing encrypted blob..."
                           : hasKey
                             ? "Encryption key ready"
-                            : "Sign: \"Never gonna give you up\""}
+                            : "Sign with your NEAR wallet"}
                     </p>
                   </div>
                 )}
@@ -544,9 +544,9 @@ TOC JSON (in browser memory)`}</pre>
             </p>
             <div className="info-code">
               <span className="code-label">Key Derivation:</span>
-              <pre className="mono">{`// 1. Sign deterministic message
-const message = "Never gonna give you up 🎵 {wallet}";
-const signature = await metamask.sign(message);
+              <pre className="mono">{`// 1. Sign deterministic message (NEP-413)
+const message = "PrivateRAG-Key-Derivation {accountId}";
+const signature = await nearWallet.signMessage(message);
 
 // 2. Hash signature to get 256-bit key
 const keyBytes = SHA256(signature);
