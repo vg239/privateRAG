@@ -1,0 +1,113 @@
+/* TreeView Component Styles */
+
+.tree-view {
+  font-size: 0.9rem;
+}
+
+.tree-empty,
+.tree-empty-inline {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Tree Root */
+.tree-root {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Tree Item */
+.tree-item {
+  margin-bottom: 0.5rem;
+}
+
+.tree-item-content {
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.tree-item-content:hover {
+  background: var(--bg-hover);
+  border-left-color: var(--accent-primary);
+}
+
+.tree-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Bullet colors by depth */
+.tree-bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.tree-bullet.depth-0 {
+  background: var(--accent-primary);
+}
+
+.tree-bullet.depth-1 {
+  background: #06b6d4;
+}
+
+.tree-bullet.depth-2 {
+  background: #22c55e;
+}
+
+.tree-bullet.depth-3 {
+  background: #eab308;
+}
+
+.tree-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.tree-pages {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: 'Geist Mono', monospace;
+  padding: 0.15rem 0.4rem;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+}
+
+.tree-preview {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding-left: calc(8px + 0.6rem); /* Align with title */
+}
+
+/* Nested Children */
+.tree-children {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.tree-children .tree-item-content {
+  background: transparent;
+  padding: 0.4rem 0.6rem;
+}
+
+.tree-children .tree-item-content:hover {
+  background: var(--bg-tertiary);
+}
+
+.tree-children .tree-bullet {
+  width: 6px;
+  height: 6px;
+}
+
+
