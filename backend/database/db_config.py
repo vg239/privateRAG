@@ -1,37 +1,40 @@
 import os
 from dotenv import load_dotenv
-from config import settings
+from sqlmodel import create_engine
 
 load_dotenv()
 
 
-def get_connection_string() -> str:
-    """Get the database connection string from environment or settings"""
-    db_url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
+def get_database_url() -> str:
+    """Get the database connection string from environment"""
+    db_url = os.getenv("DATABASE_URL", "")
     
-    # Convert postgresql:// to postgres:// for asyncpg
-    if db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgres://", 1)
+    if not db_url:
+        raise ValueError("DATABASE_URL environment variable is required")
     
     return db_url
 
 
 def format_debug_string(conn_string: str) -> str:
-    """Format connection string for logging (sanitizes sensitive info)"""
+    """Format connection string for logging (hides password)"""
     if not conn_string:
         return "No connection string"
     
-    # Mask password in connection string
-    if "@" in conn_string:
-        parts = conn_string.split("@")
-        if len(parts) == 2:
-            auth_part = parts[0]
-            if ":" in auth_part:
-                user_pass = auth_part.split(":")
-                if len(user_pass) == 2:
-                    masked = f"{user_pass[0]}:****@{parts[1]}"
-                    return masked
+    # Mask password: postgresql://user:pass@host -> postgresql://user:****@host
+    if "@" in conn_string and "://" in conn_string:
+        try:
+            protocol, rest = conn_string.split("://", 1)
+            if "@" in rest:
+                auth, host = rest.split("@", 1)
+                if ":" in auth:
+                    user, _ = auth.split(":", 1)
+                    return f"{protocol}://{user}:****@{host}"
+        except:
+            pass
     
-    return conn_string
+    return conn_string[:20] + "..."
 
 
+# Create SQLModel engine
+DATABASE_URL = get_database_url()
+engine = create_engine(DATABASE_URL, echo=False)
