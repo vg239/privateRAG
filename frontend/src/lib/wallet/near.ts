@@ -142,7 +142,14 @@ export function buildKeyDerivationMessage(accountId: string): string {
  * Sign a message using NEP-413 signMessage.
  * Returns the base64-encoded signature.
  */
-async function signMessage(message: string): Promise<SignatureResult> {
+/**
+ * Sign a message using NEP-413 signMessage.
+ * Returns the base64-encoded signature.
+ * 
+ * @param message The text message to sign
+ * @param nonce Optional 32-byte buffer. If not provided, a random nonce is generated.
+ */
+async function signMessage(message: string, nonce?: Buffer): Promise<SignatureResult> {
     if (!selector) {
         return { success: false, error: "Wallet not initialised" };
     }
@@ -150,11 +157,14 @@ async function signMessage(message: string): Promise<SignatureResult> {
     try {
         const wallet = await selector.wallet();
 
+        // Use provided nonce OR generate a random one (standard security practice)
+        const actualNonce = nonce || Buffer.from(crypto.getRandomValues(new Uint8Array(32)));
+
         // NEP-413 signMessage
         const result = await (wallet as any).signMessage({
             message,
             recipient: "privaterag.app",
-            nonce: Buffer.from(new Uint8Array(32)), // Deterministic nonce for reproducible signatures
+            nonce: actualNonce,
         });
 
         if (!result || !result.signature) {
@@ -185,20 +195,28 @@ async function signMessage(message: string): Promise<SignatureResult> {
 
 /**
  * Sign for key derivation (deterministic message → deterministic signature → AES key).
+ * 
+ * CRITICAL: We MUST use a deterministic (zero) nonce here. 
+ * If we used a random nonce, the signature would change every time, 
+ * and the user would derive a different encryption key, making them unable to decrypt valid files.
  */
 export async function signForKeyDerivation(accountId: string): Promise<SignatureResult> {
     const message = buildKeyDerivationMessage(accountId);
-    return signMessage(message);
+    // Explicitly using 32 bytes of zeros for deterministic output
+    const zeroNonce = Buffer.from(new Uint8Array(32));
+    return signMessage(message, zeroNonce);
 }
 
 /**
  * Sign a TOC hash for ownership verification.
+ * Uses a random nonce for freshness/security.
  */
 export async function signTOCForOwnership(
     tocHash: string,
     _accountId: string
 ): Promise<SignatureResult> {
     const message = `PrivateRAG-TOC-Ownership:${tocHash}`;
+    // No nonce passed -> uses random nonce
     return signMessage(message);
 }
 

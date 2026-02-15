@@ -46,7 +46,6 @@ app.add_middleware(
 app.include_router(vaults_router)
 app.include_router(chat_router)
 
-
 @app.get("/", tags=["root"])
 async def root():
     """Root endpoint"""
