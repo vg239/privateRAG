@@ -60,8 +60,8 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-function authHeaders(extra: HeadersInit = {}): HeadersInit {
-  const headers: HeadersInit = { ...extra };
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...extra };
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
@@ -125,9 +125,6 @@ export async function sendChatMessage(
 
   return handleResponse<ChatResponse>(res);
 }
-
-const buildLoginMessage = (walletAddress: string, nonce: string): string =>
-  `Login to PrivateRAG with wallet ${walletAddress.toLowerCase()}. Nonce: ${nonce}`;
 
 export async function requestAuthNonce(walletAddress: string): Promise<NonceResponse> {
   const res = await fetch(`${API_BASE_URL}/auth/nonce`, {
