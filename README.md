@@ -6,6 +6,20 @@
 
 **Vectorless, reasoning-based RAG with end-to-end encryption.** Your documents. Your keys.
 
+## Table of Contents
+
+- [Architecture Diagram](#architecture-diagram)
+- [The Problem](#the-problem)
+- [Our solution](#our-solution)
+- [What gets on the server side?](#what-gets-on-the-server-side)
+- [Two Signatures and the Cryptographic Process](#two-signatures-and-the-cryptographic-process)
+  - [1. Key-derivation signature](#1-key-derivation-signature)
+  - [2. TOC ownership signature](#2-toc-ownership-signature)
+  - [Cryptographic process (high level)](#cryptographic-process-high-level)
+- [Deployment](#deployment)
+- [Team Members](#team-members)
+- [License](#license)
+
 # Architecture Diagram
 
 ![PrivateRAG Architecture](assets/fossflow-export-2026-02-16T15_48_42.061Z.png)
