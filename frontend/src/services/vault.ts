@@ -1,5 +1,5 @@
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export interface VaultData {
   owner_wallet: string;
@@ -56,7 +56,7 @@ export async function createVault(data: VaultData): Promise<VaultResponse> {
 
   return response.json();
 }
-  
+
 export async function listVaults(wallet: string): Promise<VaultResponse[]> {
   const response = await fetch(
     `${API_BASE}/api/vaults?wallet=${encodeURIComponent(wallet.toLowerCase())}`
