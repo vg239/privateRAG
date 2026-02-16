@@ -32,8 +32,11 @@ Aligned with the in-app docs:
 4. **Encryption and storage**  
    The resulting TOC is encrypted in the browser with **AES-256-GCM** using a key derived from your wallet. Only the **encrypted blob** is sent to the server and stored in the **vaults** table. The server cannot decrypt it.
 
-5. **Decryption**  
-   The client fetches the vault by `owner_wallet` and `doc_hash`, re-derives the decryption key from your key-derivation signature, and decrypts `encrypted_toc` with AES-256-GCM (IV and auth tag are in the blob). **What the hash and signature do:** `doc_hash` identifies which document the vault belongs to. `toc_signature` is the wallet signature of that hash; the client verifies (ECDSA recovery) that the signer equals `owner_wallet` before decrypting, so you know the vault was created by that wallet for that document and the blob was not swapped.
+5. **Nova Wallet Integration (Encrypted IPFS)**
+   For document files, we use **Nova (Encrypted IPFS)**. The PDF is encrypted locally with a unique key, and the encrypted blob is stored on IPFS. The hash of the file is anchored on the **defillama.testnet** contract (using the `record_transaction` method) to prove existence and ownership on-chain. This ensures that your documents are stored in a decentralized, verifiable, and encrypted manner, accessible only by you.
+
+6. **Decryption**  
+   The client fetches the vault by `owner_wallet` and `doc_hash`. For the TOC, it re-derives the key from your wallet signature. For the document itself, it retrieves the encrypted blob from IPFS (via Nova) and decrypts it using the stored key. The `doc_hash` and `toc_signature` ensure integrity and authenticity.
 
 ---
 
