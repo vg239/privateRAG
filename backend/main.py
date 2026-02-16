@@ -7,14 +7,10 @@ The backend only stores encrypted TOC blobs - it cannot read your data.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from sqlmodel import SQLModel
 import logging
 
 from config import settings
-from database.db_config import engine, format_debug_string, DATABASE_URL
 from routers.vaults import router as vaults_router
-from routers.chat import router as chat_router
 
 # Configure logging
 logging.basicConfig(
@@ -44,7 +40,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(vaults_router)
-app.include_router(chat_router)
 
 @app.get("/", tags=["root"])
 async def root():

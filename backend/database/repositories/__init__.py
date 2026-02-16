@@ -1,6 +1,3 @@
-from .user_repository import UserRepository
-from .document_repository import DocumentRepository
+# Repository layer; vaults use SQLModel/Session in the router directly.
 
-__all__ = ["UserRepository", "DocumentRepository"]
-
-
+__all__: list[str] = []
