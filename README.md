@@ -53,6 +53,9 @@ Aligned with the in-app docs `/docs`:
 
 5. **Decryption**  
    The client fetches the vault by `owner_wallet` and `doc_hash`, re-derives the decryption key from your key-derivation signature, and decrypts `encrypted_toc` with AES-256-GCM (IV and auth tag are in the blob). **What the hash and signature do:** `doc_hash` identifies which document the vault belongs to. `toc_signature` is the wallet signature of that hash; the client verifies (ECDSA recovery) that the signer equals `owner_wallet` before decrypting, so you know the vault was created by that wallet for that document and the blob was not swapped.
+
+6. **Nova Integration (Encrypted IPFS)**
+   For document files, we use **Nova (Encrypted IPFS)**. The PDF is encrypted locally with a unique key, and the encrypted blob is stored on IPFS. The hash of the file is anchored on the **defillama.testnet** contract (using the `record_transaction` method) to prove existence and ownership on-chain. This ensures that your documents are stored in a decentralized, verifiable, and encrypted manner, accessible only by you.
  
 
 ## What gets on the server side?
