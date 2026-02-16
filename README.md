@@ -6,7 +6,8 @@
 
 <h2 align="center"><strong>Vectorless, reasoning-based RAG with end-to-end encryption.</strong><br> Your documents. Your keys.</h2>
 
-## Table of Contents
+<details>
+<summary style="font-size: 24px; font-weight: bold; cursor: pointer;"><h1>Table of Contents</h1></summary>
 
 - [Architecture Diagram](#architecture-diagram)
 - [The Problem](#the-problem)
@@ -19,6 +20,8 @@
 - [Deployment](#deployment)
 - [Team Members](#team-members)
 - [License](#license)
+
+</details>
 
 # Architecture Diagram
 
