@@ -6,7 +6,7 @@ This folder contains the FastAPI backend API, organized so that **HTTP concerns 
 
 - **`routers/`**: All HTTP endpoints live here (FastAPI `APIRouter`s).
   - **How it helps**: Keeps request/response logic, validation, and HTTP errors isolated from database code.
-  - **In this repo**: `routers/users.py` implements user-facing endpoints (create/login/read/update/delete).
+  - **In this repo**: `routers/users.py` implements user-facing endpoints (create/login/read/update).
 
 - **`database/`**: Everything related to talking to PostgreSQL.
   - **How it helps**: Centralizes connection pooling + isolates SQL queries behind repository classes.

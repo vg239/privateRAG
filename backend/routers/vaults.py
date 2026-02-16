@@ -315,33 +315,3 @@ def update_vault(
         session.refresh(vault)
         
         return vault
-
-
-@router.delete("/{doc_hash}", status_code=204)
-def delete_vault(
-    doc_hash: str,
-    wallet: str = Query(..., description="Owner wallet address")
-):
-    """
-    Delete a vault permanently.
-    
-    Access control: Only owner_wallet can delete.
-    Warning: This is irreversible - encrypted data will be lost.
-    """
-    owner_wallet = wallet.lower()
-    
-    with Session(engine) as session:
-        vault = session.exec(
-            select(Vault).where(
-                Vault.owner_wallet == owner_wallet,
-                Vault.doc_hash == doc_hash
-            )
-        ).first()
-        
-        if not vault:
-            raise HTTPException(status_code=404, detail="Vault not found")
-        
-        session.delete(vault)
-        session.commit()
-        
-        return None
