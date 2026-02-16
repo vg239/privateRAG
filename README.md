@@ -4,7 +4,7 @@
   <img src="assets/Untitled design.png" alt="PrivateRAG Logo" width="200" />
 </p>
 
-**Vectorless, reasoning-based RAG with end-to-end encryption.** Your documents. Your keys.
+<h2 align="center"><strong>Vectorless, reasoning-based RAG with end-to-end encryption.</strong> Your documents. Your keys.</h2>
 
 ## Table of Contents
 
