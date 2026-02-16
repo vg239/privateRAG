@@ -4,7 +4,7 @@
   <img src="assets/Untitled design.png" alt="PrivateRAG Logo" width="200" />
 </p>
 
-<h2 align="center"><strong>Vectorless, reasoning-based RAG with end-to-end encryption.</strong> Your documents. Your keys.</h2>
+<h2 align="center"><strong>Vectorless, reasoning-based RAG with end-to-end encryption.</strong><br> Your documents. Your keys.</h2>
 
 ## Table of Contents
 
@@ -106,7 +106,42 @@ So: the first signature is for **confidentiality** (key derivation); the second 
 
 The server only persists and returns opaque blobs and metadata; it never has the key or the plaintext TOC.
 
-### Deployment
+## Installation & Setup Guide
+
+### 1. Ensure PostgreSQL is Installed and Running
+
+Make sure PostgreSQL is running and your `.env` is configured, as specified in the backend's `.env.example`.
+
+### 2. Install backend dependencies
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### 3. Run Database Migrations
+
+Activate the backend environment and run:
+
+```bash
+alembic upgrade head
+```
+
+### 4. Run the Backend
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 5. Deploy the Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Deployment
 
 - **Frontend**: https://private-rag.vercel.app/app
 - **Backend**: https://privaterag.onrender.com/
@@ -114,9 +149,10 @@ The server only persists and returns opaque blobs and metadata; it never has the
 
 ## Team Members
 
-- Suyash D Nahar - https://github.com/suyash101101/
-- Vatsal Gandhi - https://github.com/vg239/
-- Nikkhil Kottoli - http://github.com/nikhilKottoli/
+- <a href="https://github.com/suyash101101/" target="_blank">Suyash D Nahar</a>
+- <a href="https://github.com/vg239/" target="_blank">Vatsal Gandhi</a>
+- <a href="http://github.com/nikhilKottoli/" target="_blank">Nikkhil Kottoli</a>
+
 
 ## License
 
