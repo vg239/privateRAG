@@ -1,6 +1,14 @@
-# PrivateRAG
+<h1 align="center">PrivateRAG</h1>
+
+<p align="center">
+  <img src="assets/Untitled design.png" alt="PrivateRAG Logo" width="200" />
+</p>
 
 **Vectorless, reasoning-based RAG with end-to-end encryption.** Your documents. Your keys.
+
+# Architecture Diagram
+
+![PrivateRAG Architecture](assets/fossflow-export-2026-02-16T15_48_42.061Z.png)
 
 ## The Problem
 
@@ -84,6 +92,17 @@ So: the first signature is for **confidentiality** (key derivation); the second 
 
 The server only persists and returns opaque blobs and metadata; it never has the key or the plaintext TOC.
 
+### Deployment
+
+- **Frontend**: https://private-rag.vercel.app/app
+- **Backend**: https://privaterag.onrender.com/
+
+
+## Team Members
+
+- Suyash D Nahar - https://github.com/suyash101101/
+- Vatsal Gandhi - https://github.com/vg239/
+- Nikkhil Kottoli - http://github.com/nikhilKottoli/
 
 ## License
 
