@@ -27,6 +27,10 @@
 
 ![PrivateRAG Architecture](assets/fossflow-export-2026-02-16T15_48_42.061Z.png)
 
+## Demo Video
+
+[[Watch Demo]](https://www.youtube.com/watch?v=HEb0t18YQY4)
+
 ## The Problem
 
 Traditional RAG systems rely on **vectorization**: documents are split into chunks, turned into embeddings, and stored in vector databases. That implies:
